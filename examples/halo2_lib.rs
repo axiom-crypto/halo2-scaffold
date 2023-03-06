@@ -1,157 +1,160 @@
 use ark_std::{end_timer, start_timer};
+use halo2_base::halo2_proofs::halo2curves::bn256::{Bn256, G1Affine};
+use halo2_base::halo2_proofs::plonk::{create_proof, verify_proof};
+use halo2_base::halo2_proofs::poly::kzg::commitment::KZGCommitmentScheme;
+use halo2_base::halo2_proofs::poly::kzg::multiopen::{ProverSHPLONK, VerifierSHPLONK};
+use halo2_base::halo2_proofs::poly::kzg::strategy::SingleStrategy;
+use halo2_base::halo2_proofs::transcript::{
+    Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
+};
+use halo2_base::halo2_proofs::{dev::MockProver, halo2curves::bn256::Fr};
+use halo2_base::utils::ScalarField;
 use halo2_base::{
     gates::{
-        flex_gate::{FlexGateConfig, GateStrategy},
-        GateInstructions,
+        builder::{GateCircuitBuilder, GateThreadBuilder},
+        GateChip, GateInstructions,
     },
-    Context, ContextParams,
+    halo2_proofs::plonk::{keygen_pk, keygen_vk},
+    utils::fs::gen_srs,
+};
+use halo2_base::{
+    Context,
     QuantumCell::{Constant, Existing, Witness},
 };
-use halo2_proofs::{
-    arithmetic::Field,
-    circuit::{Layouter, SimpleFloorPlanner, Value},
-    halo2curves::bn256::{Bn256, Fr, G1Affine},
-    plonk::{create_proof, keygen_pk, keygen_vk, verify_proof, Circuit, ConstraintSystem, Error},
-    poly::{
-        commitment::ParamsProver,
-        kzg::{
-            commitment::{KZGCommitmentScheme, ParamsKZG},
-            multiopen::{ProverSHPLONK, VerifierSHPLONK},
-            strategy::SingleStrategy,
-        },
-    },
-    transcript::{
-        Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
-    },
-};
+use halo2_proofs::arithmetic::Field;
 use rand::rngs::OsRng;
+use std::env::var;
 
-#[derive(Clone, Default)]
-struct MyCircuit {
-    x: Value<Fr>,
-}
+fn some_algorithm_in_zk<F: ScalarField>(ctx: &mut Context<F>, x: F) {
+    // `Context` can roughly be thought of as a single-threaded execution trace of a program we want to ZK prove. We do some post-processing on `Context` to optimally divide the execution trace into multiple columns in a PLONKish arithmetization
+    // More advanced usage with multi-threaded witness generation is possible, but we do not explain it here
 
-impl Circuit<Fr> for MyCircuit {
-    type Config = FlexGateConfig<Fr>;
-    type FloorPlanner = SimpleFloorPlanner; // we will always use SimpleFloorPlanner
+    // first we load a private input `x` (let's not worry about public inputs for now)
+    let x = ctx.load_witness(x);
 
-    fn without_witnesses(&self) -> Self {
-        // set `x` to `Value::unknown()` for verifying key and proving key generation, which are steps that do not depend on the witnesses
-        Self::default()
-    }
+    // create a Gate chip that contains methods for basic arithmetic operations
+    let gate = GateChip::<F>::default();
 
-    fn configure(meta: &mut ConstraintSystem<Fr>) -> Self::Config {
-        // you can always set strategy to Vertical and context_id = 0 for now
-        // we need to know `degree` where the final circuit will have `2^degree` rows
-        // `advice` is the number of advice columns
-        // `fixed` is the number of fixed columns
-        let degree: usize = std::env::var("DEGREE")
-            .unwrap_or_else(|_| panic!("set DEGREE env variable to usize"))
-            .parse()
-            .unwrap_or_else(|_| panic!("set DEGREE env variable to usize"));
-        FlexGateConfig::configure(meta, GateStrategy::Vertical, &[1], 1, 0, degree)
-    }
+    // now we can perform arithmetic operations almost like a normal program using halo2-lib API functions
+    // square x
+    let x_sq = gate.mul(ctx, x, x);
 
-    fn synthesize(
-        &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<Fr>,
-    ) -> Result<(), Error> {
-        // this is where witness generation happens
+    // x^2 + 72
+    let c = F::from(72);
+    // the implicit type of most variables is an "Existing" assigned value
+    // a known constant is a separate type that we specify by `Constant(c)`:
+    let _ = gate.add(ctx, x_sq, Constant(c));
 
-        // halo2 allows you to specify computations and constraints in "regions": you specify what columns to use, and row positions are relative to the region
-        // it will then try to re-arrange the regions vertically to pack in as much as possible - this is called the layouter
-
-        // we find the layouter to slow down performance, so we prefer to do everything in a single region and you as the circuit designer can either manually or automatically optimize the grid layout
-        let mut first_pass = true;
-        layouter.assign_region(
-            || "put a name if you want",
-            |region| {
-                // because of the layouter's intent to re-arrange regions, it always calls this closure TWICE: the first time to figure out the "shape" of the region, the second time to actually do the computations
-                // doing things twice is slow, so we skip this step. ONLY do this if you are using a single region!
-                if first_pass {
-                    first_pass = false;
-                    return Ok(());
-                }
-
-                // to do our own "auto-"assignment of cells and to keep track of how many cells are used, etc, we put everything into a `Context` struct: this is basically the `region` + helper stats
-                let mut ctx = Context::new(
-                    region,
-                    ContextParams {
-                        max_rows: config.max_rows,
-                        num_context_ids: 1,
-                        fixed_columns: config.constants.clone(),
-                    },
-                );
-
-                // now to the actual computation
-
-                // first we load a private input `x` (let's not worry about public inputs for now)
-                let x = config.assign_witnesses(&mut ctx, vec![self.x]).pop().unwrap();
-
-                // square x
-                let x_sq = config.mul(&mut ctx, Existing(&x), Existing(&x));
-
-                // x^2 + 72
-                let c = Fr::from(72);
-                let _ = config.add(&mut ctx, Existing(&x_sq), Constant(c));
-
-                // here is a more optimal way to compute x^2 + 72 using our API:
-                let val = x.value().map(|x| *x * x + c);
-                let _ = config.assign_region_last(
-                    &mut ctx,
-                    vec![Constant(c), Existing(&x), Existing(&x), Witness(val)],
-                    vec![(0, None)],
-                );
-                // the `vec![(0, None)]` tells us to turn on a vertical `a + b * c = d` gate at row position 0. Ignore the `None` for now - it's just always there
-
-                Ok(())
-            },
-        )?;
-
-        // post processing if you want
-        Ok(())
-    }
+    // here is a more optimal way to compute x^2 + 72 using the lower level `assign_region` API:
+    let val = *x.value() * x.value() + c;
+    let _val_assigned =
+        ctx.assign_region_last([Constant(c), Existing(x), Existing(x), Witness(val)], [0]);
+    // the `[0]` tells us to turn on a vertical `a + b * c = d` gate at row position 0.
+    // this imposes the constraint c + x * x = val
 }
 
 fn main() {
-    let k = 5; // this is the log_2(rows) you specify
-    std::env::set_var("DEGREE", k.to_string());
-    // we generate a universal trusted setup of our own for testing
-    let params = ParamsKZG::<Bn256>::setup(k, OsRng);
+    env_logger::init();
 
-    // just to emphasize that for vk, pk we don't need to know the value of `x`
-    let circuit = MyCircuit { x: Value::unknown() };
-    let vk = keygen_vk(&params, &circuit).expect("vk should not fail");
-    let pk = keygen_pk(&params, vk, &circuit).expect("pk should not fail");
+    // run mock prover
+    mock();
 
-    // now we generate an actual proof for a random input x
-    let circuit = MyCircuit { x: Value::known(Fr::random(OsRng)) };
+    // uncomment below to run actual prover:
+    // prove();
+}
 
-    let pf_time = start_timer!(|| "Creating proof");
+// The functions below are generic scaffolding functions and do not need to be changed.
+
+/// Creates a circuit and runs the Halo2 `MockProver` on it. Will print out errors if the circuit does not pass.
+///
+/// This requires an environment variable `DEGREE` to be set, which limits the number of rows of the circuit to 2<sup>DEGREE</sup>.
+pub fn mock() {
+    // we initiate a "thread builder" in mockprover mode. This is what keeps track of the execution trace of our program and the ZK constraints so we can do some post-processing optimization after witness generation
+    let mut builder = GateThreadBuilder::mock();
+    // builder.main(phase) gets a default "main" thread for the given phase. For most purposes we only need to think about phase 0
+    // we use a random input
+    // while `some_algorithm_in_zk` was written generically for any field `F`, in practice we use the scalar field of the BN254 curve because that's what the proving system backend uses
+    some_algorithm_in_zk(builder.main(0), Fr::random(OsRng));
+
+    // now `builder` contains the execution trace, and we are ready to actually create the circuit
+    let k = var("DEGREE").unwrap_or_else(|_| "18".to_string()).parse().unwrap();
+    // minimum rows is the number of rows used for blinding factors. This depends on the circuit itself, but we can guess the number and change it if something breaks (default 9 usually works)
+    let minimum_rows = var("MINIMUM_ROWS").unwrap_or_else(|_| "9".to_string()).parse().unwrap();
+    // auto-tune circuit
+    builder.config(k, Some(minimum_rows));
+    // create circuit
+    let circuit = GateCircuitBuilder::mock(builder);
+
+    let time = start_timer!(|| "Mock prover");
+    // we don't have any public inputs for now
+    MockProver::run(k as u32, &circuit, vec![]).unwrap().assert_satisfied();
+    end_timer!(time);
+    println!("Mock prover passed!");
+}
+
+/// Creates a circuit and runs the full Halo2 proving process on it.
+/// Will time the generation of verify key & proving key. It will then run the prover on the given circuit.
+/// Finally the verifier will verify the proof. The verifier will panic if the proof is invalid.
+///
+/// Warning: This may be memory and compute intensive.
+pub fn prove() {
+    let k = var("DEGREE").unwrap_or_else(|_| "18".to_string()).parse().unwrap();
+    let minimum_rows = var("MINIMUM_ROWS").unwrap_or_else(|_| "9".to_string()).parse().unwrap();
+    // much the same process as [`mock()`], but we need to create a separate circuit for the key generation stage and the proving stage (in production they are done separately)
+
+    // in keygen mode, the private variables are all not used
+    let mut builder = GateThreadBuilder::keygen();
+    some_algorithm_in_zk(builder.main(0), Fr::zero()); // the input value doesn't matter here for keygen
+    builder.config(k, Some(minimum_rows));
+
+    let circuit = GateCircuitBuilder::keygen(builder);
+
+    // generates a random universal trusted setup and write to file for later re-use. This is NOT for production. In production a trusted setup must be created from a multi-party computation
+    let params = gen_srs(k as u32);
+    let vk_time = start_timer!(|| "Generating verifying key");
+    let vk = keygen_vk(&params, &circuit).expect("vk generation failed");
+    end_timer!(vk_time);
+    let pk_time = start_timer!(|| "Generating proving key");
+    let pk = keygen_pk(&params, vk, &circuit).expect("pk generation failed");
+    end_timer!(pk_time);
+    // The MAIN DIFFERENCE in this setup is that after pk generation, the shape of the circuit is set in stone. We should not auto-configure the circuit anymore. Instead, we get the circuit shape and store it:
+    let break_points = circuit.break_points.take();
+
+    let input = Fr::random(OsRng); // mocking with a random input
+    let pf_time = start_timer!(|| "Creating KZG proof using SHPLONK multi-open scheme");
+    // we time creation of the builder because this is the witness generation stage and can only
+    // be done after the private inputs are known
+    let mut builder = GateThreadBuilder::prover();
+    some_algorithm_in_zk(builder.main(0), input);
+    // once again, we have a pre-determined way to break up the builder "threads" into an optimal
+    // circuit shape, so we create the prover circuit from this information (`break_points`)
+    let circuit = GateCircuitBuilder::prover(builder, break_points);
+
     let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
     create_proof::<
         KZGCommitmentScheme<Bn256>,
         ProverSHPLONK<'_, Bn256>,
         Challenge255<G1Affine>,
         _,
-        Blake2bWrite<Vec<u8>, G1Affine, Challenge255<_>>,
+        Blake2bWrite<Vec<u8>, G1Affine, Challenge255<G1Affine>>,
         _,
     >(&params, &pk, &[circuit], &[&[]], OsRng, &mut transcript)
-    .expect("prover should not fail");
+    .expect("proof generation failed");
     let proof = transcript.finalize();
     end_timer!(pf_time);
 
-    // verify the proof to make sure everything is ok
-    let verifier_params = params.verifier_params();
     let strategy = SingleStrategy::new(&params);
     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
-    assert!(verify_proof::<
+    let verify_time = start_timer!(|| "verify");
+    verify_proof::<
         KZGCommitmentScheme<Bn256>,
         VerifierSHPLONK<'_, Bn256>,
         Challenge255<G1Affine>,
         Blake2bRead<&[u8], G1Affine, Challenge255<G1Affine>>,
         SingleStrategy<'_, Bn256>,
-    >(verifier_params, pk.get_vk(), strategy, &[&[]], &mut transcript)
-    .is_ok());
+    >(&params, pk.get_vk(), strategy, &[&[]], &mut transcript)
+    .unwrap();
+    end_timer!(verify_time);
+
+    println!("Congratulations! Your ZK proof is valid!");
 }
