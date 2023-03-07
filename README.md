@@ -74,3 +74,27 @@ If you want to see the statistics for what is actually being auto-configured in 
 ```bash
 RUST_LOG=info DEGREE=<k> cargo run --example halo2_lib --profile=local
 ```
+
+### Using lookup table for range check
+
+The [`halo2_lib.rs`](examples/halo2_lib.rs) example uses the `GateChip` and its associated functions. It is often necessary to use
+functions that involve checking that a certain field element has a certain number of bits. While there are ways to do this by computing the full
+bit decomposition, it is more efficient in Halo2 to use a lookup table. We provide a `RangeChip` that has this functionality built in (together with various other functions: see [`RangeInstructions`](https://axiom-crypto.github.io/halo2-lib/halo2_base/gates/range/trait.RangeInstructions.html)).
+
+You can find an example of how to use `RangeChip` in [`range.rs`](examples/range.rs). To run this example, run
+
+```bash
+DEGREE=<k> cargo run --example range
+```
+
+Once again, for better performance, you can run
+
+```bash
+DEGREE=<k> cargo run --example range --profile=local
+```
+
+or
+
+```bash
+DEGREE=<k> cargo run --example range --release
+```
