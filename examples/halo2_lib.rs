@@ -35,6 +35,7 @@ fn some_algorithm_in_zk<F: ScalarField>(ctx: &mut Context<F>, x: F) {
     // create a Gate chip that contains methods for basic arithmetic operations
     let gate = GateChip::<F>::default();
 
+    // ===== way 1 =====
     // now we can perform arithmetic operations almost like a normal program using halo2-lib API functions
     // square x
     let x_sq = gate.mul(ctx, x, x);
@@ -45,12 +46,20 @@ fn some_algorithm_in_zk<F: ScalarField>(ctx: &mut Context<F>, x: F) {
     // a known constant is a separate type that we specify by `Constant(c)`:
     let _ = gate.add(ctx, x_sq, Constant(c));
 
+    // ==== way 2 =======
     // here is a more optimal way to compute x^2 + 72 using the lower level `assign_region` API:
     let val = *x.value() * x.value() + c;
     let _val_assigned =
         ctx.assign_region_last([Constant(c), Existing(x), Existing(x), Witness(val)], [0]);
     // the `[0]` tells us to turn on a vertical `a + b * c = d` gate at row position 0.
     // this imposes the constraint c + x * x = val
+
+    // ==== way 3 ======
+    // this does the exact same thing as way 2, but with a pre-existing function
+    let _val_assigned = gate.mul_add(ctx, x, x, Constant(c));
+    println!("x: {:?}", x.value());
+    println!("val_assigned: {:?}", _val_assigned.value());
+    assert_eq!(*x.value() * x.value() + c, *_val_assigned.value());
 }
 
 fn main() {
