@@ -14,6 +14,8 @@ halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.gi
 
 # Axiom's helper API with basic functions 
 halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "axiom-dev-0301" }
+# Axiom poseidon chip (adapted from Scroll)
+poseidon = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "axiom-dev-0301" }
 
 log = "0.4"
 env_logger = "0.10"
