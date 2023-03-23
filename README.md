@@ -84,17 +84,19 @@ bit decomposition, it is more efficient in Halo2 to use a lookup table. We provi
 You can find an example of how to use `RangeChip` in [`range.rs`](examples/range.rs). To run this example, run
 
 ```bash
-DEGREE=<k> cargo run --example range
+DEGREE=<k> LOOKUP_BITS=8 cargo run --example range
 ```
+
+Here we use a lookup table with `2**8` rows to check if a field element is in `[0, 2**8)`. You can change `LOOKUP_BITS` to any number less than `DEGREE`.
 
 Once again, for better performance, you can run
 
 ```bash
-DEGREE=<k> cargo run --example range --profile=local
+DEGREE=<k> LOOKUP_BITS=8 cargo run --example range --profile=local
 ```
 
 or
 
 ```bash
-DEGREE=<k> cargo run --example range --release
+DEGREE=<k> LOOKUP_BITS=8 cargo run --example range --release
 ```

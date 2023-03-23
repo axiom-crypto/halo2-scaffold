@@ -16,7 +16,7 @@ use halo2_proofs::{
         Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
     },
 };
-use halo2_scaffold::my_circuit::StandardPlonk;
+use halo2_scaffold::circuits::standard_plonk::StandardPlonk;
 use rand::rngs::OsRng;
 
 fn main() {
