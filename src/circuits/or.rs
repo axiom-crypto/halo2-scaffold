@@ -32,23 +32,20 @@ impl OrConfig {
         meta.enable_equality(witness);
 
         // we create a single OR gate
-        meta.create_gate(
-            "selector[0] * (witness[0] + witness[1] - witness[0] * witness[1] - witness[2]) = 0",
-            |meta| {
-                // this gate will be applied AT EVERY ROW
-                // the relative offsets are specified using `Rotation`
+        meta.create_gate("OR gate", |meta| {
+            // this gate will be applied AT EVERY ROW
+            // the relative offsets are specified using `Rotation`
 
-                // we `query` for the `Expression` corresponding to the cell entry in a particular column at a relative row offset
-                let a = meta.query_advice(witness, Rotation::cur());
-                let b = meta.query_advice(witness, Rotation(1)); // or Rotation::next()
-                let out = meta.query_advice(witness, Rotation(2)); // or Rotation::next()
-                let sel = meta.query_selector(selector);
+            // we `query` for the `Expression` corresponding to the cell entry in a particular column at a relative row offset
+            let a = meta.query_advice(witness, Rotation::cur());
+            let b = meta.query_advice(witness, Rotation(1)); // or Rotation::next()
+            let out = meta.query_advice(witness, Rotation(2)); // or Rotation::next()
+            let sel = meta.query_selector(selector);
 
-                // specify all polynomial expressions that we require to equal zero
-                // `Expression` is basically an abstract container for the polynomial corresponding to a column; in particular it can't implement `Copy` so we need to clone it to pass rust ownership rules
-                vec![sel * (a.clone() + b.clone() - a * b - out)]
-            },
-        );
+            // specify all polynomial expressions that we require to equal zero
+            // `Expression` is basically an abstract container for the polynomial corresponding to a column; in particular it can't implement `Copy` so we need to clone it to pass rust ownership rules
+            vec![sel * (a.clone() + b.clone() - a * b - out)]
+        });
 
         Self { witness, selector }
     }
@@ -174,7 +171,7 @@ mod test {
 
     // this marks the function as a test
     #[test]
-    fn test_standard_plonk() {
+    fn test_or() {
         let k = 5;
         // when actually running a circuit, we specialize F to the scalar field of BN254, denoted Fr
         let circuit = OrCircuit { a: Value::known(Fr::one()), b: Value::known(Fr::one()) };
