@@ -16,7 +16,7 @@ use halo2_proofs::{
         Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
     },
 };
-use halo2_scaffold::circuits::standard_plonk::StandardPlonk;
+use halo2_scaffold::circuits::{or::OrCircuit, standard_plonk::StandardPlonk};
 use rand::rngs::OsRng;
 
 fn main() {
@@ -27,11 +27,13 @@ fn main() {
 
     // just to emphasize that for vk, pk we don't need to know the value of `x`
     let circuit = StandardPlonk { x: Value::unknown() };
+    // let circuit = OrCircuit { a: Value::unknown(), b: Value::unknown() };
     let vk = keygen_vk(&params, &circuit).expect("vk should not fail");
     let pk = keygen_pk(&params, vk, &circuit).expect("pk should not fail");
 
     // now we generate an actual proof for a random input x
     let circuit = StandardPlonk { x: Value::known(Fr::random(OsRng)) };
+    // let circuit = OrCircuit { a: Value::known(Fr::one()), b: Value::known(Fr::zero()) };
 
     let pf_time = start_timer!(|| "Creating proof");
     let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
