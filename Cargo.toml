@@ -1,6 +1,6 @@
 [package]
 name = "halo2-scaffold"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -10,15 +10,46 @@ rand = "0.8"
 ark-std = { version = "0.3.0", features = ["print-trace"] }
 
 # halo2
-halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_01_20" }
+halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
 
 # Axiom's helper API with basic functions 
-halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib.git", default-features = false, features = ["halo2-pse"] }
+halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "axiom-dev-0301" }
+# Axiom poseidon chip (adapted from Scroll)
+poseidon = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "axiom-dev-0301" }
+
+log = "0.4"
+env_logger = "0.10"
+
+[dev-dependencies]
+test-log = "0.2.11"
 
 [features]
 default = []
 
-[profile.release]
-debug = true
+# Dev / testing mode. We make opt-level = 3 to improve proving times (otherwise it is really slow)
+[profile.dev]
 opt-level = 3
-lto = "thin" 
+debug = 1 # change to 0 or 2 for more or less debug info
+overflow-checks = true # default
+incremental = true # default
+
+# Local "release" mode, more optimized than dev but faster to compile than release
+[profile.local]
+inherits = "dev"
+opt-level = 3
+# Set this to 1 or 2 to get more useful backtraces
+debug = 1
+debug-assertions = false
+panic = 'unwind'
+# better recompile times
+incremental = true
+lto = "thin"
+codegen-units = 16
+
+[profile.release]
+opt-level = 3
+debug = false
+debug-assertions = false
+lto = "fat"
+panic = "abort"
+incremental = false

@@ -1,1 +1,2 @@
-pub mod my_circuit;
+pub mod circuits;
+pub mod scaffold;
