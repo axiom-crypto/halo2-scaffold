@@ -29,9 +29,9 @@ cargo test -- --nocapture test_standard_plonk
 ```
 
 where `--nocapture` tells rust to display any stdout outputs (by default tests omit stdout).
-This performs witness generation on the circuit and checks that the constraints you imposed are satisfied. This does run the actual cryptographic operations behind a ZK proof. As a result, the mock prover is much faster than the actual prover, and should be used first for all debugging purposes.
+This performs witness generation on the circuit and checks that the constraints you imposed are satisfied. This does not run the actual cryptographic operations behind a ZK proof. As a result, the mock prover is much faster than the actual prover, and should be used first for all debugging purposes.
 
-To run the actual prover for `my_circuit` to mimic a production setup and to get benchmarks, run
+To run the actual prover for the `StandardPlonk` circuit to mimic a production setup and to get benchmarks, run
 
 ```bash
 cargo run --release
@@ -43,6 +43,8 @@ slow. For nearly as fast performance with better compile times, run
 ```bash
 cargo run --profile=local
 ```
+
+For a few other example circuits using the standard Halo2 API, see [`circuits`](src/circuits).
 
 ## Using the halo2-lib API
 
