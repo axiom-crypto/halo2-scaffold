@@ -20,7 +20,7 @@ git switch halo2-lib-v0.3
 
 ## Learning Halo2
 
-To see the basic scaffolding needed to begin writing a circuit and examples of how to use the Halo2 API, see [`my_circuit.rs`](src/my_circuit.rs). This contains a basic demonstration of how to create a halo2 circuit using the (PSE fork of) the halo2_proofs API. It shows creation of a "custom gate" that implements the standard PLONK gate.
+To see the basic scaffolding needed to begin writing a circuit and examples of how to use the Halo2 API, see [`standard_plonk.rs`](src/circuits/standard_plonk.rs). This contains a basic demonstration of how to create a halo2 circuit using the (PSE fork of) the halo2_proofs API. It shows creation of a "custom gate" that implements the standard PLONK gate.
 
 To run the mock prover on this circuit for testing purposes, run
 
