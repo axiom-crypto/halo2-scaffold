@@ -15,7 +15,6 @@ Clone this repo:
 ```bash
 git clone https://github.com/axiom-crypto/halo2-scaffold.git
 cd halo2-scaffold
-git switch halo2-lib-v0.3
 ```
 
 ## Quick start with `halo2-lib`
