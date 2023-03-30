@@ -116,7 +116,7 @@ impl<F: FieldExt> Circuit<F> for IsZeroCircuit<F> {
                 // we assign this to the y column in row 0
                 // | row | x      | y     | out | selector |
                 // | 0   | self.x | y_val |     |          |
-                let y = region.assign_advice(|| "y", config.y, 0, || y_val)?;
+                let _y = region.assign_advice(|| "y", config.y, 0, || y_val)?;
 
                 // Entirely separately we can just compute the witness for out = x == 0 ? 1 : 0 the normal way
                 let out_val = x.value().map(|x| if x == &F::zero() { F::one() } else { F::zero() });

@@ -79,7 +79,7 @@ impl<F: FieldExt> Circuit<F> for StandardPlonk<F> {
         layouter.assign_region(
             || "",
             |mut region| {
-                // for performance, it is better to avoid the ? operator; see https://github.com/rust-lang/rust/issues/37939
+                // For an explanation of what the rust ? operator does, see https://doc.rust-lang.org/std/result/#the-question-mark-operator-
                 let x = region.assign_advice(
                     || "add annotation if you want",
                     config.a,
@@ -106,8 +106,6 @@ impl<F: FieldExt> Circuit<F> for StandardPlonk<F> {
                 region.assign_fixed(|| "", config.q_c, 2, || Value::known(-F::one()))?;
                 region.assign_fixed(|| "", config.q_ab, 2, || Value::known(F::one()))?;
                 region.assign_fixed(|| "", config.constant, 2, || Value::known(c))?;
-
-                // EXERCISE: can you compute x^2 + 72 in one row?
 
                 Ok(())
             },

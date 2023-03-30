@@ -2,7 +2,7 @@
 
 This repository is intended to provide a playground for you to easily start writing a ZK circuit using the Halo2 proving stack.
 
-## Getting started
+## Setup
 
 Install rust:
 
@@ -18,55 +18,30 @@ cd halo2-scaffold
 git switch halo2-lib-v0.3
 ```
 
-## Learning Halo2
+## Quick start with `halo2-lib`
 
-To see the basic scaffolding needed to begin writing a circuit and examples of how to use the Halo2 API, see [`standard_plonk.rs`](src/circuits/standard_plonk.rs). This contains a basic demonstration of how to create a halo2 circuit using the (PSE fork of) the halo2_proofs API. It shows creation of a "custom gate" that implements the standard PLONK gate.
+To write your first ZK circuit, copy [`examples/halo2_lib.rs`](examples/halo2_lib.rs) to a new file in `examples` directory. Now you can fill in the `some_function_in_zk` function with your desired computation.
 
-To run the mock prover on this circuit for testing purposes, run
+We provide some examples of how to write these functions:
 
-```bash
-cargo test -- --nocapture test_standard_plonk
-```
+- [`examples/halo2_lib.rs`](examples/halo2_lib.rs): Takes in an input `x` and computes `x**2 + 27` in several different ways.
+- [`examples/range.rs`](examples/range.rs): Takes in an input `x` and checks if `x` is in `[0, 2**64)`.
+- [`examples/poseidon.rs`](examples/poseidon.rs): Takes in two inputs `x, y` and computes the Poseidon hash of `[x, y]`. We recommend skipping this example on first pass unless you explicitly need to use the Poseidon hash function for something.
 
-where `--nocapture` tells rust to display any stdout outputs (by default tests omit stdout).
-This performs witness generation on the circuit and checks that the constraints you imposed are satisfied. This does not run the actual cryptographic operations behind a ZK proof. As a result, the mock prover is much faster than the actual prover, and should be used first for all debugging purposes.
-
-To run the actual prover for the `StandardPlonk` circuit to mimic a production setup and to get benchmarks, run
-
-```bash
-cargo run --release
-```
-
-This runs the [`main.rs`](src/main.rs) code with full optimization. The tradeoff is that compile times can be
-slow. For nearly as fast performance with better compile times, run
-
-```bash
-cargo run --profile=local
-```
-
-For a few other example circuits using the standard Halo2 API, see [`circuits`](src/circuits).
-
-## Using the halo2-lib API
-
-We wrote [halo2-lib](https://github.com/axiom-crypto/halo2-lib/tree/axiom-dev-0301) to provide another
-layer of abstraction on top of the halo2_proofs API. This API is designed to be easier to use for
-ZK beginners and improve development velocity for all ZK developers. See
-[`examples/halo2_lib.rs`](examples/halo2_lib.rs) for an example of how to use halo2-lib/halo2-base to write circuits using Axiom's aided frontend.
-
-We have abstracted away much of the original Halo2 API: now to write the circuit you just need to fill in the `some_function_in_zk` function.
+These examples use the [halo2-lib](https://github.com/axiom-crypto/halo2-lib/tree/axiom-dev-0301) API, which is a frontend API we wrote to aid in ZK circuit development on top of the original `halo2_proofs` API. This API is designed to be easier to use for ZK beginners and improve development velocity for all ZK developers.
 
 To explore all the functions available in the halo2-lib API, see the [halo2-lib documentation](https://axiom-crypto.github.io/halo2-lib/halo2_base/index.html).
 
 After writing your circuit, run it using
 
 ```bash
-DEGREE=<k> cargo run --example halo2_lib --release
+DEGREE=<k> cargo run --example halo2_lib
 ```
 
-or
+If you need to run it as fast as possible, run
 
 ```bash
-DEGREE=<k> cargo run --example halo2_lib --profile=local
+DEGREE=<k> cargo run --example halo2_lib --release
 ```
 
 Here `DEGREE` is an environmental variable you specify to set the circuit to have `2^DEGREE` number of rows. The halo2-lib API will automatically allocate columns for the optimal circuit that fits within the specified number of rows. See [here](https://docs.axiom.xyz/zero-knowledge-proofs/getting-started-with-halo2#cost-modeling) for a discussion of how to think about the row vs. column tradeoff in a Halo2 circuit.
@@ -74,14 +49,12 @@ Here `DEGREE` is an environmental variable you specify to set the circuit to hav
 If you want to see the statistics for what is actually being auto-configured in the circuit, you can run
 
 ```bash
-RUST_LOG=info DEGREE=<k> cargo run --example halo2_lib --profile=local
+RUST_LOG=info DEGREE=<k> cargo run --example halo2_lib
 ```
 
-### Using lookup table for range check
+### Range checks
 
-The [`halo2_lib.rs`](examples/halo2_lib.rs) example uses the `GateChip` and its associated functions. It is often necessary to use
-functions that involve checking that a certain field element has a certain number of bits. While there are ways to do this by computing the full
-bit decomposition, it is more efficient in Halo2 to use a lookup table. We provide a `RangeChip` that has this functionality built in (together with various other functions: see [`RangeInstructions`](https://axiom-crypto.github.io/halo2-lib/halo2_base/gates/range/trait.RangeInstructions.html)).
+It is often necessary to use functions that involve checking that a certain field element has a certain number of bits. While there are ways to do this by computing the full bit decomposition, it is more efficient in Halo2 to use a lookup table. We provide a `RangeChip` that has this functionality built in (together with various other functions: see the trait [`RangeInstructions`](https://axiom-crypto.github.io/halo2-lib/halo2_base/gates/range/trait.RangeInstructions.html) which `RangeChip` implements).
 
 You can find an example of how to use `RangeChip` in [`range.rs`](examples/range.rs). To run this example, run
 
@@ -89,16 +62,49 @@ You can find an example of how to use `RangeChip` in [`range.rs`](examples/range
 DEGREE=<k> LOOKUP_BITS=8 cargo run --example range
 ```
 
-Here we use a lookup table with `2**8` rows to check if a field element is in `[0, 2**8)`. You can change `LOOKUP_BITS` to any number less than `DEGREE`.
+You can change `LOOKUP_BITS` to any number less than `DEGREE`. Internally, we use the lookup table to check that a number is in `[0, 2**LOOKUP_BITS)`. However in the external `RangeInstructions::range_check` function, we have some additional logic that allows you to check that a number is in `[0, 2**bits)` for _any_ number of bits `bits`. For example, in the `range.rs` example, we check that an input is in `[0, 2**64)`. This works regardless of what `LOOKUP_BITS` is set to.
 
 Once again, for better performance, you can run
 
 ```bash
-DEGREE=<k> LOOKUP_BITS=8 cargo run --example range --profile=local
+DEGREE=<k> LOOKUP_BITS=8 cargo run --example range --release
 ```
 
-or
+## Using the vanilla Halo2 API
+
+**Note:** If you just want to get started writing a circuit, we recommend skipping this section and focusing on the section [above](#quick-start-with-halo2-lib) instead.
+
+For documentation on the vanilla Halo2 API, see the [halo2 book](https://zcash.github.io/halo2/index.html) as well as the [rustdocs](https://axiom-crypto.github.io/halo2/halo2_proofs/).
+
+To see the basic scaffolding needed to begin writing a circuit using the raw Halo2 API, see the examples in the [`circuits`](src/circuits/) directory. We recommend looking at the examples in this order:
+
+- [OR gate](src/circuits/or.rs): creates a "custom" OR gate and then writes a circuit to compute logical OR of two bits.
+- [Standard PLONK](src/circuits/standard_plonk.rs): creates a circuit that implements the standard PLONK gate.
+- [Is Zero](src/circuits/is_zero.rs): creates a circuit that performs the computation `x -> x == 0 ? 1 : 0`.
+
+To run the mock prover on for example the `or.rs` circuit for testing purposes, run
 
 ```bash
-DEGREE=<k> LOOKUP_BITS=8 cargo run --example range --release
+cargo test -- --nocapture test_or
+```
+
+where `--nocapture` tells rust to display any stdout outputs (by default tests omit stdout).
+This performs witness generation on the circuit and checks that the constraints you imposed are satisfied. This does _not_ run the actual cryptographic operations behind a ZK proof. As a result, the mock prover is much faster than the actual prover, and should be used first for all debugging purposes.
+
+You can replace `test_or` with `test_standard_plonk` or `test_is_zero_zero` or `test_is_zero_random` to run the mock prover on the other circuits.
+
+### Running the actual prover
+
+For those curious, we also provide an example showing how to run the actual prover for the [`standard_plonk.rs`](src/circuits/standard_plonk.rs) circuit.
+To run the actual prover this circuit to mimic a production setup and to get benchmarks, run
+
+```bash
+cargo run --release --example standard_plonk
+```
+
+This runs the [`examples/standard_plonk.rs`](examples/standard_plonk.rs) code with full optimization. The tradeoff is that compile times can be
+slow. For nearly as fast performance with better compile times, run
+
+```bash
+cargo run --profile=local --example standard_plonk
 ```
