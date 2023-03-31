@@ -29,7 +29,9 @@ We provide some examples of how to write these functions:
 
 These examples use the [halo2-lib](https://github.com/axiom-crypto/halo2-lib/tree/axiom-dev-0301) API, which is a frontend API we wrote to aid in ZK circuit development on top of the original `halo2_proofs` API. This API is designed to be easier to use for ZK beginners and improve development velocity for all ZK developers.
 
-To explore all the functions available in the halo2-lib API, see the [halo2-lib documentation](https://axiom-crypto.github.io/halo2-lib/halo2_base/index.html).
+For a walkthrough of these examples, see [this doc](https://docs.axiom.xyz/~/changes/ztIYKznQAmn202AIDFuO/zero-knowledge-proofs/getting-started-with-halo2).
+
+To explore all the functions available in the halo2-lib API, see this [list](https://docs.axiom.xyz/~/changes/ztIYKznQAmn202AIDFuO/zero-knowledge-proofs/getting-started-with-halo2#available-api-functions).
 
 After writing your circuit, run it using
 
