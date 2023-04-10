@@ -13,9 +13,9 @@ ark-std = { version = "0.3.0", features = ["print-trace"] }
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
 
 # Axiom's helper API with basic functions 
-halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "axiom-dev-0301" }
+halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "axiom-dev-0406" }
 # Axiom poseidon chip (adapted from Scroll)
-poseidon = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "axiom-dev-0301" }
+poseidon = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "axiom-dev-0406" }
 
 log = "0.4"
 env_logger = "0.10"
