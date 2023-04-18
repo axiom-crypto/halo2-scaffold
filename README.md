@@ -33,27 +33,61 @@ For a walkthrough of these examples, see [this doc](https://docs.axiom.xyz/~/cha
 
 To explore all the functions available in the halo2-lib API, see this [list](https://docs.axiom.xyz/~/changes/ztIYKznQAmn202AIDFuO/zero-knowledge-proofs/getting-started-with-halo2#available-api-functions).
 
-After writing your circuit, run it using
+Below we go over the available ZK commands that can be run on your circuit. They work on each of the examples above, replacing the name `halo2_lib` below with `<Example Name>`.
+
+### Mock Prover
+
+After writing your circuit, run the mock prover using
 
 ```bash
-DEGREE=<k> cargo run --example halo2_lib
+cargo run --example halo2_lib -- --name halo2_lib -k <DEGREE> mock # for example, DEGREE=8
 ```
 
-If you need to run it as fast as possible, run
+where `--name` can be used to specify any name for your circuit. By default, the program will try to read in the input as a JSON from [`data/halo2_lib.in`](data/halo2_lib.in). A different input path can be specified with option `--input filename.in` which is expected to be located at `data/filename.in`.
 
-```bash
-DEGREE=<k> cargo run --example halo2_lib --release
-```
+The `MockProver` does not run the cryptographic prover on your circuit, but instead directly checks if constraints are satisfied. This is useful for testing purposes, and runs faster than the actual prover.
 
-Here `DEGREE` is an environmental variable you specify to set the circuit to have `2^DEGREE` number of rows. The halo2-lib API will automatically allocate columns for the optimal circuit that fits within the specified number of rows. See [here](https://docs.axiom.xyz/zero-knowledge-proofs/getting-started-with-halo2#cost-modeling) for a discussion of how to think about the row vs. column tradeoff in a Halo2 circuit.
+Here `DEGREE` is a variable you specify to set the circuit to have `2^DEGREE` number of rows. The halo2-lib API will automatically allocate columns for the optimal circuit that fits within the specified number of rows. See [here](https://docs.axiom.xyz/zero-knowledge-proofs/getting-started-with-halo2#cost-modeling) for a discussion of how to think about the row vs. column tradeoff in a Halo2 circuit. _Note:_ The last ~9 rows of a circuit are reserved for the proof system (blinding factors to ensure zero-knowledge).
 
 If you want to see the statistics for what is actually being auto-configured in the circuit, you can run
 
 ```bash
-RUST_LOG=info DEGREE=<k> cargo run --example halo2_lib
+RUST_LOG=info cargo run --example halo2_lib -- --name halo2_lib -k <DEGREE> mock
 ```
 
-### Range checks
+### Key generation
+
+To generate a random universal trusted setup (for testing only!) and the proving and verifying keys for your circuit, run
+
+```bash
+cargo run --example halo2_lib -- --name halo2_lib -k <DEGREE> --input halo2_lib.0.in keygen
+```
+
+For technical reasons (to be removed in the future), keygen still requires an input file of the correct format. However keygen is only done once per circuit, so it is best practice to use a different input than the input you want to test with.
+
+This will generate a proving key `data/halo2_lib.pk` and a verifying key `data/halo2_lib.vk`. It will also generate a file `configs/halo2_lib.json` which describes (and pins down) the configuration of the circuit. This configuration file is later read by the prover.
+
+### Proof generation
+
+After you have generated the proving and verifying keys, you can generate a proof for your circuit using
+
+```bash
+cargo run --example halo2_lib -- --name halo2_lib -k <DEGREE> prove
+```
+
+This creates a SNARK proof, stored as a binary file `data/halo2_lib.snark`, using the inputs read (by default) from `data/halo2_lib.in`. You can specify a different input file with the option `--input filename.in`, which would look for a file at `data/filename.in`.
+
+Using the same proving key, you can generate proofs for the same ZK circuit on _different_ inputs using this command.
+
+### Verifying a proof
+
+You can verify the proof generated above using
+
+```bash
+cargo run --example halo2_lib -- --name halo2_lib -k <DEGREE> verify
+```
+
+## Range checks
 
 It is often necessary to use functions that involve checking that a certain field element has a certain number of bits. While there are ways to do this by computing the full bit decomposition, it is more efficient in Halo2 to use a lookup table. We provide a `RangeChip` that has this functionality built in (together with various other functions: see the trait [`RangeInstructions`](https://axiom-crypto.github.io/halo2-lib/halo2_base/gates/range/trait.RangeInstructions.html) which `RangeChip` implements).
 
