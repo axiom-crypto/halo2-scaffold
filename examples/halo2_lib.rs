@@ -15,6 +15,7 @@ pub struct CircuitInput {
     pub x: String, // field element, but easier to deserialize as a string
 }
 
+// this algorithm takes a public input x, computes x^2 + 72, and outputs the result as public output
 fn some_algorithm_in_zk<F: ScalarField>(
     ctx: &mut Context<F>,
     input: CircuitInput,

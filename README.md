@@ -94,16 +94,11 @@ It is often necessary to use functions that involve checking that a certain fiel
 You can find an example of how to use `RangeChip` in [`range.rs`](examples/range.rs). To run this example, run
 
 ```bash
-DEGREE=<k> LOOKUP_BITS=8 cargo run --example range
+LOOKUP_BITS=8 cargo run --example range -- --name range -k <DEGREE> <COMMAND>
 ```
 
+where `<COMMAND>` can be `mock`, `keygen`, `prove`, or `verify`.
 You can change `LOOKUP_BITS` to any number less than `DEGREE`. Internally, we use the lookup table to check that a number is in `[0, 2**LOOKUP_BITS)`. However in the external `RangeInstructions::range_check` function, we have some additional logic that allows you to check that a number is in `[0, 2**bits)` for _any_ number of bits `bits`. For example, in the `range.rs` example, we check that an input is in `[0, 2**64)`. This works regardless of what `LOOKUP_BITS` is set to.
-
-Once again, for better performance, you can run
-
-```bash
-DEGREE=<k> LOOKUP_BITS=8 cargo run --example range --release
-```
 
 ## Using the vanilla Halo2 API
 
