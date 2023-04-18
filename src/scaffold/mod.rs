@@ -1,7 +1,7 @@
 //! This module contains helper functions to handle some common setup to convert the `some_algorithm_in_zk` function in the examples into a Halo2 circuit.
 //! These functions are not quite general enough to place into `halo2-lib` yet, so they are just some internal helpers for this crate only for now.
 //! We recommend not reading this module on first (or second) pass.
-use ark_std::{end_timer, start_timer};
+// use ark_std::{end_timer, start_timer};
 use axiom_eth::util::{
     circuit::{PinnableCircuit, PreCircuit},
     AggregationConfigPinning, Halo2ConfigPinning,
@@ -118,6 +118,9 @@ pub fn run<T: DeserializeOwned>(
             let pk_path = data_path.join(PathBuf::from(format!("{name}.pk")));
             let pk = custom_read_pk(pk_path, &circuit);
             let snark_path = data_path.join(PathBuf::from(format!("{name}.snark")));
+            if snark_path.exists() {
+                fs::remove_file(&snark_path).unwrap();
+            }
             gen_snark_shplonk(&params, &pk, circuit, Some(&snark_path));
             println!("Snark written to: {snark_path:?}");
         }
