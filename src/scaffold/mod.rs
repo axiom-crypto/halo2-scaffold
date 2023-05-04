@@ -74,14 +74,23 @@ pub fn run_builder<T: DeserializeOwned>(
     f: impl FnOnce(&mut GateThreadBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
     cli: Cli,
 ) {
-    let name = cli.name;
+    let name = &cli.name;
     let input_path = PathBuf::from("data")
-        .join(cli.input_path.unwrap_or_else(|| PathBuf::from(format!("{name}.in"))));
+        .join(cli.input_path.clone().unwrap_or_else(|| PathBuf::from(format!("{name}.in"))));
     let private_inputs: T = serde_json::from_reader(
         File::open(&input_path)
             .unwrap_or_else(|e| panic!("Input file not found at {input_path:?}. {e:?}")),
     )
     .expect("Input file should be a valid JSON file");
+    run_builder_on_inputs(f, cli, private_inputs)
+}
+
+pub fn run_builder_on_inputs<T>(
+    f: impl FnOnce(&mut GateThreadBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
+    cli: Cli,
+    private_inputs: T,
+) {
+    let name = cli.name;
     let k = cli.degree;
 
     let config_path = cli.config_path.unwrap_or_else(|| PathBuf::from("configs"));
