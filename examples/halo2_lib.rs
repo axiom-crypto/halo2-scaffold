@@ -2,6 +2,7 @@ use clap::Parser;
 use halo2_base::gates::{GateChip, GateInstructions};
 use halo2_base::utils::ScalarField;
 use halo2_base::AssignedValue;
+#[allow(unused_imports)]
 use halo2_base::{
     Context,
     QuantumCell::{Constant, Existing, Witness},
@@ -48,7 +49,6 @@ fn some_algorithm_in_zk<F: ScalarField>(
     // However in traditional terms, `out` is our output number. It is currently still private.
     // Let's make it public:
     make_public.push(out);
-
     // ==== way 2 =======
     // here is a more optimal way to compute x^2 + 72 using the lower level `assign_region` API:
     let val = *x.value() * x.value() + c;
@@ -60,9 +60,10 @@ fn some_algorithm_in_zk<F: ScalarField>(
     // ==== way 3 ======
     // this does the exact same thing as way 2, but with a pre-existing function
     let _val_assigned = gate.mul_add(ctx, x, x, Constant(c));
+
     println!("x: {:?}", x.value());
-    println!("val_assigned: {:?}", _val_assigned.value());
-    assert_eq!(*x.value() * x.value() + c, *_val_assigned.value());
+    println!("val_assigned: {:?}", out.value());
+    assert_eq!(*x.value() * x.value() + c, *out.value());
 }
 
 fn main() {
