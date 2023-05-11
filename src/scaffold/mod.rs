@@ -7,21 +7,14 @@ use axiom_eth::util::{
     AggregationConfigPinning, Halo2ConfigPinning,
 };
 use halo2_base::{
-    gates::{
-        builder::{
-            CircuitBuilderStage, GateCircuitBuilder, GateThreadBuilder,
-            MultiPhaseThreadBreakPoints, RangeCircuitBuilder,
-        },
-        flex_gate::FlexGateConfig,
+    gates::builder::{
+        CircuitBuilderStage, GateThreadBuilder, MultiPhaseThreadBreakPoints, RangeCircuitBuilder,
     },
     halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
         dev::MockProver,
         halo2curves::bn256::{Bn256, Fr, G1Affine},
-        plonk::{
-            verify_proof, Circuit, Column, ConstraintSystem, Error, Instance, ProvingKey,
-            VerifyingKey,
-        },
+        plonk::{verify_proof, Circuit, ConstraintSystem, Error, ProvingKey, VerifyingKey},
         poly::{
             commitment::{Params, ParamsProver},
             kzg::{
@@ -234,49 +227,22 @@ where
             }
         };
 
-        if lookup_bits != 0 {
-            let circuit = match stage {
-                CircuitBuilderStage::Prover => RangeCircuitBuilder::prover(
-                    builder,
-                    pinning.expect("Circuit pinning not found").break_points(),
-                ),
-                CircuitBuilderStage::Keygen => RangeCircuitBuilder::keygen(builder),
-                CircuitBuilderStage::Mock => RangeCircuitBuilder::mock(builder),
-            };
-            ScaffoldCircuitBuilder::Range(RangeWithInstanceCircuitBuilder::new(
-                circuit,
-                assigned_instances,
-            ))
-        } else {
-            let circuit = match stage {
-                CircuitBuilderStage::Prover => GateCircuitBuilder::prover(
-                    builder,
-                    pinning.expect("Circuit pinning not found").break_points(),
-                ),
-                CircuitBuilderStage::Keygen => GateCircuitBuilder::keygen(builder),
-                CircuitBuilderStage::Mock => GateCircuitBuilder::mock(builder),
-            };
-            ScaffoldCircuitBuilder::Gate(GateWithInstanceCircuitBuilder {
-                circuit,
-                assigned_instances,
-            })
-        }
+        let circuit = match stage {
+            CircuitBuilderStage::Prover => RangeCircuitBuilder::prover(
+                builder,
+                pinning.expect("Circuit pinning not found").break_points(),
+            ),
+            CircuitBuilderStage::Keygen => RangeCircuitBuilder::keygen(builder),
+            CircuitBuilderStage::Mock => RangeCircuitBuilder::mock(builder),
+        };
+        ScaffoldCircuitBuilder(RangeWithInstanceCircuitBuilder::new(circuit, assigned_instances))
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum ScaffoldConfig<F: ScalarField> {
-    Gate(GateWithInstanceConfig<F>),
-    Range(RangeWithInstanceConfig<F>),
-}
-
-pub enum ScaffoldCircuitBuilder<F: ScalarField> {
-    Gate(GateWithInstanceCircuitBuilder<F>),
-    Range(RangeWithInstanceCircuitBuilder<F>),
-}
+pub struct ScaffoldCircuitBuilder<F: ScalarField>(RangeWithInstanceCircuitBuilder<F>);
 
 impl<F: ScalarField> Circuit<F> for ScaffoldCircuitBuilder<F> {
-    type Config = ScaffoldConfig<F>;
+    type Config = RangeWithInstanceConfig<F>;
     type FloorPlanner = SimpleFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
@@ -284,43 +250,21 @@ impl<F: ScalarField> Circuit<F> for ScaffoldCircuitBuilder<F> {
     }
 
     fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let lookup_bits: usize =
-            var("LOOKUP_BITS").unwrap_or_else(|_| "0".to_string()).parse().unwrap();
-        if lookup_bits != 0 {
-            ScaffoldConfig::Range(RangeWithInstanceCircuitBuilder::configure(meta))
-        } else {
-            ScaffoldConfig::Gate(GateWithInstanceCircuitBuilder::configure(meta))
-        }
+        RangeWithInstanceCircuitBuilder::configure(meta)
     }
 
     fn synthesize(&self, config: Self::Config, layouter: impl Layouter<F>) -> Result<(), Error> {
-        match (self, config) {
-            (ScaffoldCircuitBuilder::Gate(circuit), ScaffoldConfig::Gate(config)) => {
-                circuit.synthesize(config, layouter)
-            }
-            (ScaffoldCircuitBuilder::Range(circuit), ScaffoldConfig::Range(config)) => {
-                circuit.synthesize(config, layouter)
-            }
-            _ => unreachable!(),
-        }
+        self.0.synthesize(config, layouter)
     }
 }
 
 impl<F: ScalarField> CircuitExt<F> for ScaffoldCircuitBuilder<F> {
     fn num_instance(&self) -> Vec<usize> {
-        match self {
-            ScaffoldCircuitBuilder::Gate(circuit) => vec![circuit.assigned_instances.len()],
-            ScaffoldCircuitBuilder::Range(circuit) => vec![circuit.assigned_instances.len()],
-        }
+        vec![self.0.assigned_instances.len()]
     }
 
     fn instances(&self) -> Vec<Vec<F>> {
-        match self {
-            ScaffoldCircuitBuilder::Gate(circuit) => {
-                vec![circuit.assigned_instances.iter().map(|v| *v.value()).collect()]
-            }
-            ScaffoldCircuitBuilder::Range(circuit) => circuit.instances(),
-        }
+        self.0.instances()
     }
 }
 
@@ -328,65 +272,6 @@ impl<F: ScalarField> PinnableCircuit<F> for ScaffoldCircuitBuilder<F> {
     type Pinning = AggregationConfigPinning;
 
     fn break_points(&self) -> MultiPhaseThreadBreakPoints {
-        match self {
-            ScaffoldCircuitBuilder::Gate(circuit) => circuit.circuit.break_points.borrow().clone(),
-            ScaffoldCircuitBuilder::Range(circuit) => {
-                circuit.circuit.0.break_points.borrow().clone()
-            }
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct GateWithInstanceConfig<F: ScalarField> {
-    pub gate: FlexGateConfig<F>,
-    pub instance: Column<Instance>,
-}
-
-/// This is an extension of [`GateCircuitBuilder`] that adds support for public instances (aka public inputs+outputs)
-///
-/// The intended design is that a [`GateThreadBuilder`] is populated and then produces some assigned instances, which are supplied as `assigned_instances` to this struct.
-/// The [`Circuit`] implementation for this struct will then expose these instances and constrain them using the Halo2 API.
-pub struct GateWithInstanceCircuitBuilder<F: ScalarField> {
-    pub circuit: GateCircuitBuilder<F>,
-    pub assigned_instances: Vec<AssignedValue<F>>,
-}
-
-impl<F: ScalarField> Circuit<F> for GateWithInstanceCircuitBuilder<F> {
-    type Config = GateWithInstanceConfig<F>;
-    type FloorPlanner = SimpleFloorPlanner;
-
-    fn without_witnesses(&self) -> Self {
-        unimplemented!()
-    }
-
-    fn configure(meta: &mut ConstraintSystem<F>) -> Self::Config {
-        let gate = GateCircuitBuilder::configure(meta);
-        let instance = meta.instance_column();
-        meta.enable_equality(instance);
-        GateWithInstanceConfig { gate, instance }
-    }
-
-    fn synthesize(
-        &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
-        // we later `take` the builder, so we need to save this value
-        let witness_gen_only = self.circuit.builder.borrow().witness_gen_only();
-        let assigned_advices = self.circuit.sub_synthesize(&config.gate, &[], &[], &mut layouter);
-
-        if !witness_gen_only {
-            // expose public instances
-            let mut layouter = layouter.namespace(|| "expose");
-            for (i, instance) in self.assigned_instances.iter().enumerate() {
-                let cell = instance.cell.unwrap();
-                let (cell, _) = assigned_advices
-                    .get(&(cell.context_id, cell.offset))
-                    .expect("instance not assigned");
-                layouter.constrain_instance(*cell, config.instance, i);
-            }
-        }
-        Ok(())
+        self.0.circuit.0.break_points.borrow().clone()
     }
 }
