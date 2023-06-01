@@ -48,7 +48,7 @@ pub mod cmd;
 
 pub struct CircuitScaffold<T, Fn>
 where
-    Fn: FnOnce(&mut Context<Fr>, T, &mut Vec<AssignedValue<Fr>>),
+    Fn: FnOnce(&mut GateThreadBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
 {
     f: Fn,
     private_inputs: T,
@@ -58,14 +58,30 @@ pub fn run<T: DeserializeOwned>(
     f: impl FnOnce(&mut Context<Fr>, T, &mut Vec<AssignedValue<Fr>>),
     cli: Cli,
 ) {
-    let name = cli.name;
+    run_builder(|builder, inp, public| f(builder.main(0), inp, public), cli)
+}
+
+pub fn run_builder<T: DeserializeOwned>(
+    f: impl FnOnce(&mut GateThreadBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
+    cli: Cli,
+) {
+    let name = &cli.name;
     let input_path = PathBuf::from("data")
-        .join(cli.input_path.unwrap_or_else(|| PathBuf::from(format!("{name}.in"))));
+        .join(cli.input_path.clone().unwrap_or_else(|| PathBuf::from(format!("{name}.in"))));
     let private_inputs: T = serde_json::from_reader(
         File::open(&input_path)
             .unwrap_or_else(|e| panic!("Input file not found at {input_path:?}. {e:?}")),
     )
     .expect("Input file should be a valid JSON file");
+    run_builder_on_inputs(f, cli, private_inputs)
+}
+
+pub fn run_builder_on_inputs<T>(
+    f: impl FnOnce(&mut GateThreadBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
+    cli: Cli,
+    private_inputs: T,
+) {
+    let name = cli.name;
     let k = cli.degree;
 
     let config_path = cli.config_path.unwrap_or_else(|| PathBuf::from("configs"));
@@ -164,7 +180,7 @@ where
 
 impl<T, Fn> PreCircuit for CircuitScaffold<T, Fn>
 where
-    Fn: FnOnce(&mut Context<Fr>, T, &mut Vec<AssignedValue<Fr>>),
+    Fn: FnOnce(&mut GateThreadBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
 {
     type Pinning = AggregationConfigPinning;
 
@@ -196,7 +212,7 @@ where
         // we need a 64-bit number as input in this case
         // while `some_algorithm_in_zk` was written generically for any field `F`, in practice we use the scalar field of the BN254 curve because that's what the proving system backend uses
         let mut assigned_instances = vec![];
-        (self.f)(builder.main(0), self.private_inputs, &mut assigned_instances);
+        (self.f)(&mut builder, self.private_inputs, &mut assigned_instances);
 
         // now `builder` contains the execution trace, and we are ready to actually create the circuit
         // minimum rows is the number of rows used for blinding factors. This depends on the circuit itself, but we can guess the number and change it if something breaks (default 9 usually works)
