@@ -9,6 +9,7 @@ use axiom_eth::util::{
 use halo2_base::{
     gates::builder::{
         CircuitBuilderStage, GateThreadBuilder, MultiPhaseThreadBreakPoints, RangeCircuitBuilder,
+        RangeWithInstanceCircuitBuilder, RangeWithInstanceConfig,
     },
     halo2_proofs::{
         circuit::{Layouter, SimpleFloorPlanner},
@@ -30,10 +31,7 @@ use halo2_base::{
 };
 use serde::de::DeserializeOwned;
 use snark_verifier_sdk::{
-    halo2::{
-        aggregation::{RangeWithInstanceCircuitBuilder, RangeWithInstanceConfig},
-        gen_snark_shplonk, read_snark, PoseidonTranscript,
-    },
+    halo2::{gen_snark_shplonk, read_snark, PoseidonTranscript},
     read_pk, CircuitExt, NativeLoader,
 };
 use std::{
