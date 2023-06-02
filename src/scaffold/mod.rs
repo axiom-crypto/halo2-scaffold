@@ -2,9 +2,12 @@
 //! These functions are not quite general enough to place into `halo2-lib` yet, so they are just some internal helpers for this crate only for now.
 //! We recommend not reading this module on first (or second) pass.
 // use ark_std::{end_timer, start_timer};
-use axiom_eth::util::{
-    circuit::{PinnableCircuit, PreCircuit},
-    AggregationConfigPinning, Halo2ConfigPinning,
+use axiom_eth::{
+    keccak::FnSynthesize,
+    util::{
+        circuit::{PinnableCircuit, PreCircuit},
+        AggregationConfigPinning, Halo2ConfigPinning,
+    },
 };
 use halo2_base::{
     gates::builder::{
@@ -46,10 +49,7 @@ use self::cmd::{Cli, SnarkCmd};
 pub mod cmd;
 ///! The functions below are generic scaffolding functions to create circuits with 'halo2-lib'
 
-pub struct CircuitScaffold<T, Fn>
-where
-    Fn: FnOnce(&mut GateThreadBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
-{
+pub struct CircuitScaffold<T, Fn> {
     f: Fn,
     private_inputs: T,
 }
@@ -76,11 +76,179 @@ pub fn run_builder<T: DeserializeOwned>(
     run_builder_on_inputs(f, cli, private_inputs)
 }
 
-pub fn run_builder_on_inputs<T>(
+pub fn run_builder_on_inputs<T: DeserializeOwned>(
     f: impl FnOnce(&mut GateThreadBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
     cli: Cli,
     private_inputs: T,
 ) {
+    let precircuit = pre_run_builder_on_inputs(f, private_inputs);
+    run_cli(precircuit, cli);
+}
+
+pub fn pre_run_builder_on_inputs<T>(
+    f: impl FnOnce(&mut GateThreadBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>),
+    private_inputs: T,
+) -> CircuitScaffold<T, impl FnOnce(&mut GateThreadBuilder<Fr>, T, &mut Vec<AssignedValue<Fr>>)> {
+    CircuitScaffold { f, private_inputs }
+}
+
+pub use eth::*;
+mod eth {
+    use std::{
+        cell::RefCell,
+        env::{set_var, var},
+        fs::File,
+        marker::PhantomData,
+        path::PathBuf,
+    };
+
+    use axiom_eth::{
+        keccak::{FixedLenRLCs, KeccakChip, VarLenRLCs},
+        rlp::{builder::RlcThreadBuilder, RlpChip},
+        util::{
+            circuit::{PinnableCircuit, PreCircuit},
+            EthConfigPinning,
+        },
+        EthChip, EthCircuitBuilder, ETH_LOOKUP_BITS,
+    };
+    use halo2_base::{
+        gates::builder::{CircuitBuilderStage, GateThreadBuilder},
+        halo2_proofs::{
+            halo2curves::bn256::{Bn256, Fr},
+            poly::{commitment::Params, kzg::commitment::ParamsKZG},
+        },
+        safe_types::RangeChip,
+        AssignedValue, Context,
+    };
+    use serde::de::DeserializeOwned;
+
+    use super::{cmd::Cli, run_cli};
+
+    pub struct EthScaffold<T, FN, F1> {
+        f: FN,
+        private_inputs: T,
+        _f1: PhantomData<F1>,
+    }
+
+    impl<T, FN, F1> PreCircuit for EthScaffold<T, FN, F1>
+    where
+        FN: FnOnce(
+            &mut GateThreadBuilder<Fr>,
+            &EthChip<Fr>,
+            &mut KeccakChip<Fr>,
+            T,
+            &mut Vec<AssignedValue<Fr>>,
+        ) -> F1,
+        F1: FnOnce(&mut Context<Fr>, &mut Context<Fr>, &EthChip<Fr>) + Clone,
+    {
+        type Pinning = EthConfigPinning;
+
+        fn create_circuit(
+            self,
+            stage: CircuitBuilderStage,
+            pinning: Option<Self::Pinning>,
+            params: &ParamsKZG<Bn256>,
+        ) -> impl PinnableCircuit<Fr> {
+            let mut builder = RlcThreadBuilder::new(stage == CircuitBuilderStage::Prover);
+            let lookup_bits: usize =
+                var("LOOKUP_BITS").unwrap_or_else(|_| ETH_LOOKUP_BITS.to_string()).parse().unwrap();
+            set_var("LOOKUP_BITS", lookup_bits.to_string());
+            let range = RangeChip::default(lookup_bits);
+            let chip = EthChip::new(RlpChip::new(&range, None), None);
+            let mut keccak = KeccakChip::default();
+
+            let mut assigned_instances = vec![];
+            let f_phase1 = (self.f)(
+                &mut builder.gate_builder,
+                &chip,
+                &mut keccak,
+                self.private_inputs,
+                &mut assigned_instances,
+            );
+            let break_points = pinning.map(|p| p.break_points);
+            let circuit = EthCircuitBuilder::new(
+                assigned_instances,
+                builder,
+                RefCell::new(keccak),
+                range,
+                break_points,
+                |builder: &mut RlcThreadBuilder<Fr>,
+                 rlp: RlpChip<Fr>,
+                 keccak_rlcs: (FixedLenRLCs<Fr>, VarLenRLCs<Fr>)| {
+                    let chip = EthChip::new(rlp, Some(keccak_rlcs));
+                    let (ctx_gate, ctx_rlc) = builder.rlc_ctx_pair();
+                    (f_phase1)(ctx_gate, ctx_rlc, &chip);
+                    if ctx_gate.advice.is_empty() {
+                        builder.gate_builder.threads[1].pop();
+                    }
+                },
+            );
+            if stage != CircuitBuilderStage::Prover {
+                circuit.config(params.k() as usize, Some(109));
+            }
+            circuit
+        }
+    }
+
+    pub fn run_eth<T, FN, F1>(f: FN, cli: Cli)
+    where
+        T: DeserializeOwned,
+        FN: FnOnce(
+            &mut Context<Fr>,
+            &EthChip<Fr>,
+            &mut KeccakChip<Fr>,
+            T,
+            &mut Vec<AssignedValue<Fr>>,
+        ) -> F1,
+        F1: FnOnce(&mut Context<Fr>, &mut Context<Fr>, &EthChip<Fr>) + Clone,
+    {
+        run_eth_builder(
+            |builder, chip, keccak, inp, public| f(builder.main(0), chip, keccak, inp, public),
+            cli,
+        )
+    }
+
+    pub fn run_eth_builder<T, FN, F1>(f: FN, cli: Cli)
+    where
+        T: DeserializeOwned,
+        FN: FnOnce(
+            &mut GateThreadBuilder<Fr>,
+            &EthChip<Fr>,
+            &mut KeccakChip<Fr>,
+            T,
+            &mut Vec<AssignedValue<Fr>>,
+        ) -> F1,
+        F1: FnOnce(&mut Context<Fr>, &mut Context<Fr>, &EthChip<Fr>) + Clone,
+    {
+        let name = &cli.name;
+        let input_path = PathBuf::from("data")
+            .join(cli.input_path.clone().unwrap_or_else(|| PathBuf::from(format!("{name}.in"))));
+        let private_inputs: T = serde_json::from_reader(
+            File::open(&input_path)
+                .unwrap_or_else(|e| panic!("Input file not found at {input_path:?}. {e:?}")),
+        )
+        .expect("Input file should be a valid JSON file");
+        run_eth_builder_on_inputs(f, cli, private_inputs)
+    }
+
+    pub fn run_eth_builder_on_inputs<T, FN, F1>(f: FN, cli: Cli, private_inputs: T)
+    where
+        T: DeserializeOwned,
+        FN: FnOnce(
+            &mut GateThreadBuilder<Fr>,
+            &EthChip<Fr>,
+            &mut KeccakChip<Fr>,
+            T,
+            &mut Vec<AssignedValue<Fr>>,
+        ) -> F1,
+        F1: FnOnce(&mut Context<Fr>, &mut Context<Fr>, &EthChip<Fr>) + Clone,
+    {
+        let precircuit = EthScaffold { f, private_inputs, _f1: PhantomData };
+        run_cli(precircuit, cli);
+    }
+}
+
+pub fn run_cli<P: PreCircuit>(precircuit: P, cli: Cli) {
     let name = cli.name;
     let k = cli.degree;
 
@@ -93,12 +261,10 @@ pub fn run_builder_on_inputs<T>(
     println!("Universal trusted setup (unsafe!) available at: params/kzg_bn254_{k}.srs");
     match cli.command {
         SnarkCmd::Mock => {
-            let precircuit = CircuitScaffold { f, private_inputs };
             let circuit = precircuit.create_circuit(CircuitBuilderStage::Mock, None, &params);
             MockProver::run(k, &circuit, circuit.instances()).unwrap().assert_satisfied();
         }
         SnarkCmd::Keygen => {
-            let precircuit = CircuitScaffold { f, private_inputs };
             let pk_path = data_path.join(PathBuf::from(format!("{name}.pk")));
             if pk_path.exists() {
                 fs::remove_file(&pk_path).unwrap();
@@ -116,9 +282,8 @@ pub fn run_builder_on_inputs<T>(
             println!("Verifying key written to: {vk_path:?}");
         }
         SnarkCmd::Prove => {
-            let precircuit = CircuitScaffold { f, private_inputs };
             let pinning_path = config_path.join(PathBuf::from(format!("{name}.json")));
-            let pinning = AggregationConfigPinning::from_path(pinning_path);
+            let pinning = P::Pinning::from_path(pinning_path);
             pinning.set_var();
             let circuit =
                 precircuit.create_circuit(CircuitBuilderStage::Prover, Some(pinning), &params);
@@ -132,7 +297,6 @@ pub fn run_builder_on_inputs<T>(
             println!("Snark written to: {snark_path:?}");
         }
         SnarkCmd::Verify => {
-            let precircuit = CircuitScaffold { f, private_inputs };
             let vk_path = data_path.join(PathBuf::from(format!("{name}.vk")));
             let circuit = precircuit.create_circuit(CircuitBuilderStage::Keygen, None, &params);
             let vk = custom_read_vk(vk_path, &circuit);
