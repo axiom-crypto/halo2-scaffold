@@ -26,8 +26,8 @@ We provide some examples of how to write these functions:
 - [`examples/halo2_lib.rs`](examples/halo2_lib.rs): Takes in an input `x` and computes `x**2 + 27` in several different ways.
 - [`examples/range.rs`](examples/range.rs): Takes in an input `x` and checks if `x` is in `[0, 2**64)`.
 - [`examples/poseidon.rs`](examples/poseidon.rs): Takes in two inputs `x, y` and computes the Poseidon hash of `[x, y]`. We recommend skipping this example on first pass unless you explicitly need to use the Poseidon hash function for something.
-- [`examples/var_len_keccak.rs](examples/var_len_keccak.rs): Takes in an input `bytes31, max_len` and computes the variable length Keccak256 hash of `bytes31` over the bit range `[min_len, max_len]`
-- [`examples/fixed_len_keccak.rs](examples/fixed_len_keccak.rs): Takes in an input `bytes31` and computes the fixed length Keccak256 hash over all of `bytes31`.
+- [`examples/var_len_keccak.rs`](examples/var_len_keccak.rs): Takes in an inputs `bytes31, max_len, min_len` and computes the variable length Keccak256 hash of `bytes31` over the bit range `[min_len..max_len]`
+- [`examples/fixed_len_keccak.rs`](examples/fixed_len_keccak.rs): Takes in an input `bytes31` and computes the fixed length Keccak256 hash over `bytes31`.
 
 These examples use the [halo2-lib](https://github.com/axiom-crypto/halo2-lib/tree/axiom-dev-0301) API, which is a frontend API we wrote to aid in ZK circuit development on top of the original `halo2_proofs` API. This API is designed to be easier to use for ZK beginners and improve development velocity for all ZK developers.
 
