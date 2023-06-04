@@ -1,4 +1,5 @@
 {
     "bytes31": "0",
-    "max_len": 1
+    "max_len": 1,
+    "min_len": 0
 }
