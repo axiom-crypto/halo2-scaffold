@@ -26,10 +26,10 @@ We provide some examples of how to write these functions:
 - [`examples/halo2_lib.rs`](examples/halo2_lib.rs): Takes in an input `x` and computes `x**2 + 27` in several different ways.
 - [`examples/range.rs`](examples/range.rs): Takes in an input `x` and checks if `x` is in `[0, 2**64)`.
 - [`examples/poseidon.rs`](examples/poseidon.rs): Takes in two inputs `x, y` and computes the Poseidon hash of `[x, y]`. We recommend skipping this example on first pass unless you explicitly need to use the Poseidon hash function for something.
-- [`examples/var_len_keccak.rs`](examples/var_len_keccak.rs): Takes in an inputs `bytes31, max_len, min_len` and computes the variable length Keccak256 hash of `bytes31` over the bit range `[min_len..max_len]`
-- [`examples/fixed_len_keccak.rs`](examples/fixed_len_keccak.rs): Takes in an input `bytes31` and computes the fixed length Keccak256 hash over `bytes31`.
+- [`examples/fixed_len_keccak.rs`](examples/fixed_len_keccak.rs): Takes in an input `bytes` of `LEN` bytes and computes the keccak256 hash of `bytes`. The generated circuit **depends on `LEN`**.
+- [`examples/var_len_keccak.rs`](examples/var_len_keccak.rs): Takes in an input `bytes` of `MAX_LEN` bytes and an input `len`, where `len <= MAX_LEN`. Computes the keccak256 hash of `bytes[..len]`. The generated circuit depends on `MAX_LEN` but takes `len` as a variable input.
 
-These examples use the [halo2-lib](https://github.com/axiom-crypto/halo2-lib/tree/axiom-dev-0301) API, which is a frontend API we wrote to aid in ZK circuit development on top of the original `halo2_proofs` API. This API is designed to be easier to use for ZK beginners and improve development velocity for all ZK developers.
+These examples use the [halo2-lib](https://github.com/axiom-crypto/halo2-lib/) API, which is a frontend API we wrote to aid in ZK circuit development on top of the original `halo2_proofs` API. This API is designed to be easier to use for ZK beginners and improve development velocity for all ZK developers.
 
 For a walkthrough of these examples, see [this doc](https://docs.axiom.xyz/~/changes/ztIYKznQAmn202AIDFuO/zero-knowledge-proofs/getting-started-with-halo2).
 
@@ -101,6 +101,71 @@ LOOKUP_BITS=8 cargo run --example range -- --name range -k <DEGREE> <COMMAND>
 
 where `<COMMAND>` can be `mock`, `keygen`, `prove`, or `verify`.
 You can change `LOOKUP_BITS` to any number less than `DEGREE`. Internally, we use the lookup table to check that a number is in `[0, 2**LOOKUP_BITS)`. However in the external `RangeInstructions::range_check` function, we have some additional logic that allows you to check that a number is in `[0, 2**bits)` for _any_ number of bits `bits`. For example, in the `range.rs` example, we check that an input is in `[0, 2**64)`. This works regardless of what `LOOKUP_BITS` is set to.
+
+## Using the Challenge API
+
+> ⚠️ This is an advanced topic, and the API interface is still in flux. We recommend skipping this section unless you are already familiar with Halo2 and need to use functions involving keccak or RLC.
+
+For an explainer on the Halo2 challenge API, see https://hackmd.io/@axiom/SJw3p-qX3.
+
+In this scaffold, we provide helper scaffolding for using functions from `axiom-eth` involving the challenge API. The usage is the same as for the `run` function above, except that you now use either `run_eth` or `run_rlc`. Use `run_rlc` if you only need `RlcChip` and `RlpChip`. Use `run_eth` is you need `EthChip`, which includes `KeccakChip`, `RlcChip`, and `RlpChip`. Refer to the examples [`fixed_len_keccak`](./examples/fixed_len_keccak.rs), [`var_len_keccak`](./examples/var_len_keccak.rs) for example usage.
+
+### Fixed length keccak
+
+The example [`fixed_len_keccak`](./examples/fixed_len_keccak.rs) takes in an input `bytes` of `LEN` bytes and computes the keccak256 hash of `bytes`. The generated circuit **depends on `LEN`**.
+
+You can run the mock prover with
+
+```bash
+cargo run --example fixed_len_keccak -- --name fixed_len_keccak -k 10 mock # or replace 10 with some other <DEGREE>
+```
+
+To run the real prover, run
+
+```bash
+cargo run --example fixed_len_keccak -- --name fixed_len_keccak -k 10 keygen
+cargo run --example fixed_len_keccak -- --name fixed_len_keccak -k 10 prove
+cargo run --example fixed_len_keccak -- --name fixed_len_keccak -k 10 verify
+```
+
+The "keygen" step creates the proving key using input file [`fixed_len_keccak.in`](./data/fixed_len_keccak.in). This has `LEN = 0`. This means we have created a circuit that **only** computes keccak of length `0` byte arrays. If you try to run
+
+```bash
+cargo run --example fixed_len_keccak -- --name fixed_len_keccak -k 10 --input fixed_len_keccak-1.in prove
+```
+
+it will fail [to verify], because this will try to create a proof for a _different_ circuit with `LEN = 3`. You can create that circuit and create a valid proof with:
+
+```bash
+cargo run --example fixed_len_keccak -- --name fixed_len_keccak-1 -k 10 --input fixed_len_keccak-1.in keygen
+cargo run --example fixed_len_keccak -- --name fixed_len_keccak-1 -k 10 --input fixed_len_keccak-1.in prove
+cargo run --example fixed_len_keccak -- --name fixed_len_keccak-1 -k 10 --input fixed_len_keccak-1.in verify
+```
+
+This circuit will now fail if you try to run `prove` on `fixed_len_keccak.in`.
+
+### Variable length keccak
+
+How do you create a circuit that can compute keccak of a byte array of _variable_ length? (Meaning, the same circuit can compute keccak of a length 0, 1, 2, 3, ... byte array.)
+While it is quite hard to create a circuit that can handle literally any input length, we can create a circuit that handles all input byte arrays of length at most some fixed `MAX_LEN`.
+We do this by representing a byte array of variable length as a fixed `MAX_LEN` length padded byte array together with a variable `len` for the actual length of the byte array.
+
+Let's walk through an example:
+
+```bash
+cargo run --example var_len_keccak -- --name var_len_keccak -k 10 mock # or replace 10 with some other <DEGREE>
+cargo run --example var_len_keccak -- --name var_len_keccak -k 10 keygen
+cargo run --example var_len_keccak -- --name var_len_keccak -k 10 prove
+cargo run --example var_len_keccak -- --name var_len_keccak -k 10 verify
+```
+
+This is creating a circuit with `MAX_LEN = 3` and proving it on the input [`var_len_keccak.in`](./data/var_len_keccak.in) with `padded_bytes = [0,1,2]` and `len = 0`. You will see that the output is `keccak256([])` and not `keccak256([0,1,2])`. Now if you run
+
+```bash
+cargo run --example var_len_keccak -- --name var_len_keccak -k 10 --input var_len_keccak.1.in prove
+```
+
+this will generate a proof computing `kecak256([0,1,2])` using the **same** circuit as before (i.e., you use the same proving key as before).
 
 ## Using the vanilla Halo2 API
 
