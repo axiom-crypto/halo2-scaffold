@@ -1,5 +1,8 @@
+//! Example of scaffolding where function uses full `GateThreaderBuilder` instead of single `Context`
 use clap::Parser;
+use halo2_base::gates::builder::GateThreadBuilder;
 use halo2_base::gates::{GateChip, GateInstructions};
+use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
 use halo2_base::utils::ScalarField;
 use halo2_base::AssignedValue;
 #[allow(unused_imports)]
@@ -7,22 +10,20 @@ use halo2_base::{
     Context,
     QuantumCell::{Constant, Existing, Witness},
 };
+use halo2_proofs::arithmetic::Field;
 use halo2_scaffold::scaffold::cmd::Cli;
-use halo2_scaffold::scaffold::run;
-use serde::{Deserialize, Serialize};
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CircuitInput {
-    pub x: String, // field element, but easier to deserialize as a string
-}
+use halo2_scaffold::scaffold::run_builder_on_inputs;
+use rand::rngs::OsRng;
 
 // this algorithm takes a public input x, computes x^2 + 72, and outputs the result as public output
 fn some_algorithm_in_zk<F: ScalarField>(
-    ctx: &mut Context<F>,
-    input: CircuitInput,
+    builder: &mut GateThreadBuilder<F>,
+    x: F,
     make_public: &mut Vec<AssignedValue<F>>,
 ) {
-    let x = F::from_str_vartime(&input.x).expect("deserialize field element should not fail");
+    // can still get a Context via:
+    let ctx = builder.main(0); // 0 means FirstPhase, don't worry about it
+
     // `Context` can roughly be thought of as a single-threaded execution trace of a program we want to ZK prove. We do some post-processing on `Context` to optimally divide the execution trace into multiple columns in a PLONKish arithmetization
     // More advanced usage with multi-threaded witness generation is possible, but we do not explain it here
 
@@ -71,6 +72,8 @@ fn main() {
 
     let args = Cli::parse();
 
-    // run different zk commands based on the command line arguments
-    run(some_algorithm_in_zk, args);
+    // let's say we don't want to run prover with inputs from file
+    // instead we generate inputs here:
+    let private_inputs = Fr::random(OsRng);
+    run_builder_on_inputs(some_algorithm_in_zk, args, private_inputs);
 }
