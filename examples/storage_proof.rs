@@ -46,6 +46,7 @@ fn compute_storage_proof_at_slot<F: Field>(
     let slot_bytes = ctx.assign_witnesses(slot.to_fixed_bytes().map(|b| F::from(b as u64)));
 
     //Range check byte values to 8 bits
+    //TODO: check if this is redundant within the eth_chip
     let range = eth_chip.range();
     for (state_root_byte, slot_byte) in state_root_bytes.clone().into_iter().zip(slot_bytes.clone().into_iter()) {
         range.range_check(ctx, state_root_byte, 8);
