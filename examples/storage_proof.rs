@@ -27,7 +27,6 @@ fn compute_storage_proof_at_slot<F: Field>(
 ) -> impl FnOnce(&mut Context<F>, &mut Context<F>, &EthChip<F>) + Clone {
     let provider = Provider::<Http>::try_from(input.provider_url.as_str()).unwrap();
     let slot = H256::from_low_u64_be(input.slot);
-    let state_root = H256::from_str(&input.state_root).unwrap();
     let address = H160::from_str(&input.addr).unwrap();
 
     // To prove the inlcusion of a storage we first need to fetch an mpt proof for a specific `slot` and block at `block_number`.
@@ -42,16 +41,14 @@ fn compute_storage_proof_at_slot<F: Field>(
     ).storage.storage_pfs[0].clone().2.assign(ctx);
 
     //To generate constraints for the storage proof we need to assign the state root and slot as witnesses in our circuit
-    let state_root_bytes = ctx.assign_witnesses(state_root.to_fixed_bytes().map(|b| F::from(b as u64)));
     let slot_bytes = ctx.assign_witnesses(slot.to_fixed_bytes().map(|b| F::from(b as u64)));
-
-    //NOTE: we need to constrain the range of the slot to be within a 32 byte range as this is performed within parse_storage_proof_phase0
 
     // We call `parse_storage_proof_phase0` to generate witness values in the First Phase of Halo2's challenge API. 
     // It defines witnesses that constrain:
     // * The computed keccak hash of `slot_bytes` is equal to the `key_bytes`
     // * The decomposed rlp encoding of value at `slot_bytes` matches `value_bytes`
     // * `slot` is included within the rlp encoded `key` of the mpt
+    // NOTE: we need to constrain the range of the slot to be within a 32 byte range as this is performed within parse_storage_proof_phase0
     let storage_trace_witness = eth_chip.parse_storage_proof_phase0(ctx, keccak, &mpt_fixed_proof.root_hash_bytes, slot_bytes, mpt_fixed_proof.clone());
     #[allow(clippy::let_and_return)]
     let callback =
