@@ -1,5 +1,5 @@
 {
-    "provider_url": "https://eth-mainnet.g.alchemy.com/v2/-ZhNr1rZIwZrstE3gPssYfLZAmupX6ii",
+    "provider_url": "RPC_URL",
     "state_root": "0xf8bef79a5edec709ff3d26126cbb2a8aa0da5ff80f6e3ffa16ec2c5d88ffab6f",
     "block_number": 16356350,
     "addr": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
