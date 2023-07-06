@@ -31,9 +31,9 @@ We provide some examples of how to write these functions:
 
 These examples use the [halo2-lib](https://github.com/axiom-crypto/halo2-lib/) API, which is a frontend API we wrote to aid in ZK circuit development on top of the original `halo2_proofs` API. This API is designed to be easier to use for ZK beginners and improve development velocity for all ZK developers.
 
-For a walkthrough of these examples, see [this doc](https://docs.axiom.xyz/~/changes/ztIYKznQAmn202AIDFuO/zero-knowledge-proofs/getting-started-with-halo2).
+For a walkthrough of these examples, see [this doc](https://docs.axiom.xyz/zero-knowledge-proofs/getting-started-with-halo2).
 
-To explore all the functions available in the halo2-lib API, see this [list](https://docs.axiom.xyz/~/changes/ztIYKznQAmn202AIDFuO/zero-knowledge-proofs/getting-started-with-halo2#available-api-functions).
+To explore all the functions available in the halo2-lib API, see this [list](https://docs.axiom.xyz/zero-knowledge-proofs/getting-started-with-halo2#available-api-functions).
 
 Below we go over the available ZK commands that can be run on your circuit. They work on each of the examples above, replacing the name `halo2_lib` below with `<Example Name>`.
 
@@ -106,7 +106,7 @@ You can change `LOOKUP_BITS` to any number less than `DEGREE`. Internally, we us
 
 > ⚠️ This is an advanced topic, and the API interface is still in flux. We recommend skipping this section unless you are already familiar with Halo2 and need to use functions involving keccak or RLC.
 
-For an explainer on the Halo2 challenge API, see https://hackmd.io/@axiom/SJw3p-qX3.
+For an explainer on the Halo2 challenge API, see <https://hackmd.io/@axiom/SJw3p-qX3>.
 
 In this scaffold, we provide helper scaffolding for using functions from `axiom-eth` involving the challenge API. The usage is the same as for the `run` function above, except that you now use either `run_eth` or `run_rlc`. Use `run_rlc` if you only need `RlcChip` and `RlpChip`. Use `run_eth` is you need `EthChip`, which includes `KeccakChip`, `RlcChip`, and `RlpChip`. Refer to the examples [`fixed_len_keccak`](./examples/fixed_len_keccak.rs), [`var_len_keccak`](./examples/var_len_keccak.rs) for example usage.
 
