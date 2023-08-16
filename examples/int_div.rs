@@ -1,7 +1,7 @@
 use std::env::var;
 
 use clap::Parser;
-use halo2_base::gates::{GateChip, GateInstructions, RangeChip};
+use halo2_base::gates::{GateInstructions, RangeChip};
 use halo2_base::safe_types::RangeInstructions;
 use halo2_base::utils::ScalarField;
 use halo2_base::AssignedValue;
@@ -44,6 +44,7 @@ fn int_div_32<F: ScalarField>(
     // needs to be compatible with some backend setup, so read from environmental variable
     let lookup_bits =
         var("LOOKUP_BITS").unwrap_or_else(|_| panic!("LOOKUP_BITS not set")).parse().unwrap();
+    // range chip uses a lookup table with precomputed numbers 0..2^lookup_bits
     let range = RangeChip::default(lookup_bits);
 
     let x_u32 = x.value().get_lower_32();
@@ -52,11 +53,18 @@ fn int_div_32<F: ScalarField>(
 
     let [quot, rem] = [quot, rem].map(|a| ctx.load_witness(F::from(a as u64)));
     // check quot and rem are both at most 5 bits so `quot * 32 + rem` doesn't overflow
-    range.range_check(ctx, quot, 5);
-    range.range_check(ctx, rem, 5);
+    // quot * 32 + rem = x
+    // rem in [0, 32)
+    // by default: you're checking quot * 32 + rem = x (mod modulus of F)
+    // check quot is at most 16 - log2_floor(32) = 11 bits
+    range.range_check(ctx, quot, 11);
+    range.check_less_than_safe(ctx, rem, 32);
 
     let x_check = range.gate().mul_add(ctx, quot, Constant(F::from(32)), rem);
     ctx.constrain_equal(&x, &x_check);
+
+    // range.range_check(ctx, x, 16);
+    // let (quot, rem) = range.div_mod(ctx, x, 32u64, 16);
 
     make_public.push(quot);
     assert_eq!(quot.value(), &F::from_str_vartime(&input.out).unwrap());

@@ -41,7 +41,7 @@ fn var_subarray<F: ScalarField>(
     make_public: &mut Vec<AssignedValue<F>>,
 ) {
     let mut arr = ctx.assign_witnesses(input.arr.into_iter().map(F::from));
-    assert_eq!(arr.len(), 1000);
+    //assert_eq!(arr.len(), 1000);
     let [start, end] = [input.start, input.end].map(|x| ctx.load_witness(F::from(x as u64)));
     for a in &arr {
         make_public.push(*a);
@@ -55,7 +55,12 @@ fn var_subarray<F: ScalarField>(
     for (d, bit) in bits.into_iter().enumerate() {
         for i in 0..1000 {
             // arr[i] = bit ? arr[i + 2^d] : arr[i]
-            let shift = arr.get(i + (1 << d)).map(|x| Existing(*x)).unwrap_or(Constant(F::zero()));
+            // let shift = arr.get(i + (1 << d)).map(|x| Existing(*x)).unwrap_or(Constant(F::zero()));
+            let shift = if i + (1 << d) < arr.len() {
+                Existing(arr[i + (1 << d)])
+            } else {
+                Constant(F::zero())
+            };
             arr[i] = gate.select(ctx, shift, arr[i], bit);
         }
     }
@@ -74,7 +79,7 @@ fn var_subarray<F: ScalarField>(
 
     // output
     for i in 0..1000 {
-        arr[i] = gate.select(ctx, arr[i], Constant(F::zero()), mask[i]);
+        arr[i] = gate.mul(ctx, arr[i], mask[i]);
         println!("{:?}", arr[i].value());
     }
 }
