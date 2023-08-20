@@ -76,7 +76,7 @@ fn decode_instruction<F: ScalarField>(
     let ap_update = bit_slice(ctx, gate, &instruction_bits, 58, 60);
     let op_code = bit_slice(ctx, gate, &instruction_bits, 60, 63);
 
-    DecodedInstruction {
+    let decoded = DecodedInstruction {
         off_dst,
         off_op0,
         off_op1,
@@ -87,7 +87,8 @@ fn decode_instruction<F: ScalarField>(
         pc_update,
         ap_update,
         op_code,
-    }
+    };
+    decoded
 }
 
 // todo: read memory through dynamic look up table
@@ -371,6 +372,12 @@ fn state_transition<F: ScalarField>(
         ap,
         decoded_instruction.ap_update,
     );
+    println!(
+        "next_pc: {:?}, next_ap: {:?}, next_fp: {:?}",
+        next_pc.value(),
+        next_ap.value(),
+        next_fp.value()
+    );
     (next_pc, next_ap, next_fp)
 }
 
@@ -379,7 +386,7 @@ fn vm<F: ScalarField>(
     cario_state: CarioState,
     _: &mut Vec<AssignedValue<F>>,
 ) {
-    let num_clock_cycles = 10;
+    let num_clock_cycles = 3;
     let mut fp = ctx.load_witness(F::from_str_vartime(&cario_state.fp).unwrap());
     let mut ap = ctx.load_witness(F::from_str_vartime(&cario_state.ap).unwrap());
     let mut pc = ctx.load_witness(F::from_str_vartime(&cario_state.pc).unwrap());
