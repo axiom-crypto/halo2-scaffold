@@ -1,13 +1,15 @@
 use clap::Parser;
-use halo2_base::gates::{GateChip, GateInstructions, RangeChip, RangeInstructions};
-use halo2_base::halo2_proofs::halo2curves::secp256k1::Fp;
+use halo2_base::gates::{GateChip, GateInstructions};
 use halo2_base::utils::{fe_to_biguint, ScalarField};
 use halo2_base::QuantumCell;
-use halo2_base::{AssignedValue, Context, QuantumCell::Constant, QuantumCell::Existing};
+use halo2_base::{
+    AssignedValue, Context, QuantumCell::Constant, QuantumCell::Existing, QuantumCell::Witness,
+};
 use halo2_scaffold::scaffold::cmd::Cli;
 use halo2_scaffold::scaffold::run;
-use std::env::var;
+use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CarioState {
     pub memory: Vec<String>,
     pub pc: String,
@@ -60,9 +62,12 @@ fn decode_instruction<F: ScalarField>(
     instruction: AssignedValue<F>,
 ) -> DecodedInstruction<F> {
     let instruction_bits = gate.num_to_bits(ctx, instruction, 63);
-    let off_dst = bit_slice(ctx, gate, &instruction_bits, 0, 16);
-    let off_op0 = bit_slice(ctx, gate, &instruction_bits, 16, 32);
-    let off_op1 = bit_slice(ctx, gate, &instruction_bits, 32, 48);
+    let off_dst_raw = bit_slice(ctx, gate, &instruction_bits, 0, 16);
+    let off_dst = bias(ctx, gate, off_dst_raw);
+    let off_op0_raw = bit_slice(ctx, gate, &instruction_bits, 16, 32);
+    let off_op0 = bias(ctx, gate, off_op0_raw);
+    let off_op1_raw = bit_slice(ctx, gate, &instruction_bits, 32, 48);
+    let off_op1 = bias(ctx, gate, off_op1_raw);
     let dst_reg = instruction_bits[48];
     let op0_reg = instruction_bits[49];
     let op1_src = bit_slice(ctx, gate, &instruction_bits, 50, 53);
@@ -126,18 +131,25 @@ fn compute_op1_and_instruction_size<F: ScalarField>(
 ) -> (AssignedValue<F>, AssignedValue<F>) {
     //op1_src != 3
     assert!(fe_to_biguint(op1_src.value()) != 3u64.into());
+    assert!(fe_to_biguint(op1_src.value()) <= 4u64.into());
+
+    let op0_off_op1 = gate.add(ctx, op0, off_op1);
+    let pc_off_op1 = gate.add(ctx, pc, off_op1);
+    let fp_off_op1 = gate.add(ctx, fp, off_op1);
+    let ap_off_op1 = gate.add(ctx, ap, off_op1);
+
     let op1_values: Vec<QuantumCell<F>> = vec![
-        Existing(read_memory(ctx, gate, memory, gate.add(ctx, op0, off_op1))),
-        Existing(read_memory(ctx, gate, memory, gate.add(ctx, pc, off_op1))),
-        Existing(read_memory(ctx, gate, memory, gate.add(ctx, fp, off_op1))),
-        Constant(F::zero()),
-        Existing(read_memory(ctx, gate, memory, gate.add(ctx, ap, off_op1))),
+        Existing(read_memory(ctx, gate, memory.clone(), op0_off_op1)),
+        Existing(read_memory(ctx, gate, memory.clone(), pc_off_op1)),
+        Existing(read_memory(ctx, gate, memory.clone(), fp_off_op1)),
+        Witness(F::zero()), // undefined behavior
+        Existing(read_memory(ctx, gate, memory.clone(), ap_off_op1)),
     ];
     let instruction_values = vec![
         Constant(F::one()),
         Constant(F::from(2u64)),
         Constant(F::one()),
-        Constant(F::zero()),
+        Witness(F::zero()), // undefined behavior
         Constant(F::one()),
     ];
 
@@ -146,109 +158,237 @@ fn compute_op1_and_instruction_size<F: ScalarField>(
     (op1, instruction_size)
 }
 
+fn compute_res<F: ScalarField>(
+    ctx: &mut Context<F>,
+    gate: &GateChip<F>,
+    pc_update: AssignedValue<F>,
+    res_logic: AssignedValue<F>,
+    op1: AssignedValue<F>,
+    op0: AssignedValue<F>,
+) -> AssignedValue<F> {
+    assert!(fe_to_biguint(pc_update.value()) != 3u64.into());
+    assert!(fe_to_biguint(pc_update.value()) <= 4u64.into());
+    assert!(fe_to_biguint(res_logic.value()) <= 2u64.into());
+
+    let op1_op0 = gate.add(ctx, op1, op0);
+    let op1_mul_op0 = gate.mul(ctx, op1, op0);
+    let case_0_1_2_value =
+        Existing(gate.select_from_idx(ctx, vec![op1, op1_op0, op1_mul_op0], res_logic));
+    let res_values = [
+        case_0_1_2_value,
+        case_0_1_2_value,
+        case_0_1_2_value,
+        Witness(F::zero()), // undefined behavior
+        Witness(F::zero()), // undefined behavior
+    ];
+    let res = gate.select_from_idx(ctx, res_values, pc_update);
+    res
+}
+
+fn compute_dst<F: ScalarField>(
+    ctx: &mut Context<F>,
+    gate: &GateChip<F>,
+    memory: Vec<AssignedValue<F>>,
+    ap: AssignedValue<F>,
+    fp: AssignedValue<F>,
+    off_dst: AssignedValue<F>,
+    dst_reg: AssignedValue<F>,
+) -> AssignedValue<F> {
+    let is_dst_reg_zero = gate.is_zero(ctx, dst_reg);
+    let address_a = gate.add(ctx, ap, off_dst);
+    let var_a = read_memory(ctx, gate, memory.clone(), address_a);
+    let address_b = gate.add(ctx, fp, off_dst);
+    let var_b = read_memory(ctx, gate, memory.clone(), address_b);
+    let dst = gate.select(ctx, var_a, var_b, is_dst_reg_zero);
+    dst
+}
+
+fn compute_next_pc<F: ScalarField>(
+    ctx: &mut Context<F>,
+    gate: &GateChip<F>,
+    pc: AssignedValue<F>,
+    instruction_size: AssignedValue<F>,
+    res: AssignedValue<F>,
+    dst: AssignedValue<F>,
+    op1: AssignedValue<F>,
+    pc_update: AssignedValue<F>,
+) -> AssignedValue<F> {
+    assert!(fe_to_biguint(pc_update.value()) != 3u64.into());
+    assert!(fe_to_biguint(pc_update.value()) <= 4u64.into());
+
+    let var_a = gate.add(ctx, pc, instruction_size);
+    let var_b = gate.add(ctx, pc, op1);
+    let sel = gate.is_zero(ctx, dst);
+    let case_4_value = gate.select(ctx, var_a, var_b, sel);
+    let next_pc_values = vec![
+        Existing(gate.add(ctx, pc, instruction_size)),
+        Existing(res),
+        Existing(gate.add(ctx, pc, res)),
+        Witness(F::zero()), // undefined behavior
+        Existing(case_4_value),
+    ];
+    let next_pc = gate.select_from_idx(ctx, next_pc_values, pc_update);
+    next_pc
+}
+
+fn compute_next_ap_fp<F: ScalarField>(
+    ctx: &mut Context<F>,
+    gate: &GateChip<F>,
+    op_code: AssignedValue<F>,
+    pc: AssignedValue<F>,
+    instruction_size: AssignedValue<F>,
+    res: AssignedValue<F>,
+    dst: AssignedValue<F>,
+    op0: AssignedValue<F>,
+    fp: AssignedValue<F>,
+    ap: AssignedValue<F>,
+    ap_update: AssignedValue<F>,
+) -> (AssignedValue<F>, AssignedValue<F>) {
+    assert!(fe_to_biguint(ap_update.value()) <= 2u64.into());
+    assert!(fe_to_biguint(op_code.value()) <= 4u64.into());
+    assert!(fe_to_biguint(op_code.value()) != 3u64.into());
+    // first, implement assertions
+    // if opcode == 1, op0 == pc + instruction_size
+    let mut condition = gate.is_equal(ctx, op_code, Constant(F::one()));
+    let sub_b = gate.add(ctx, pc, instruction_size);
+    let mul_b = gate.sub(ctx, op0, sub_b);
+    let value_to_check_1 = gate.mul(ctx, condition, mul_b);
+    gate.assert_is_const(ctx, &value_to_check_1, &F::zero());
+    // if opcode == 1, dst == fp
+    let mul_b_2 = gate.sub(ctx, dst, fp);
+    let value_to_check_2 = gate.mul(ctx, condition, mul_b_2);
+    gate.assert_is_const(ctx, &value_to_check_2, &F::zero());
+
+    // if opcode == 4, res = dst
+    condition = gate.is_equal(ctx, op_code, Constant(F::from(4u64)));
+    let mul_b_3 = gate.sub(ctx, res, dst);
+    let value_to_check_3 = gate.mul(ctx, condition, mul_b_3);
+    gate.assert_is_const(ctx, &value_to_check_3, &F::zero());
+
+    // compute next_ap
+    let next_ap_value_1 = gate.add(ctx, ap, res);
+    let next_ap_value_2 = gate.add(ctx, ap, Constant(F::one()));
+    let next_ap_swtich_by_ap_update_0_2_4 =
+        gate.select_from_idx(ctx, vec![ap, next_ap_value_1, next_ap_value_2], ap_update);
+    let var_a = gate.add(ctx, ap, Constant(F::from(2u64)));
+    let sel = gate.is_zero(ctx, ap_update);
+    let next_ap_swtich_by_ap_update_1 = gate.select(
+        ctx,
+        var_a,
+        Witness(F::zero()), // undefined behavior
+        sel,
+    );
+    let next_ap_values = [
+        Existing(next_ap_swtich_by_ap_update_0_2_4),
+        Existing(next_ap_swtich_by_ap_update_1),
+        Existing(next_ap_swtich_by_ap_update_0_2_4),
+        Witness(F::zero()), // undefined behavior
+        Existing(next_ap_swtich_by_ap_update_0_2_4),
+    ];
+    let next_ap = gate.select_from_idx(ctx, next_ap_values, op_code);
+
+    // compute next_fp
+    let next_fp_values = [
+        Existing(fp),
+        Existing(gate.add(ctx, ap, Constant(F::from(2u64)))),
+        Existing(dst),
+        Witness(F::zero()),
+        Existing(fp),
+    ];
+    let next_fp = gate.select_from_idx(ctx, next_fp_values, op_code);
+
+    (next_ap, next_fp)
+}
+
 fn state_transition<F: ScalarField>(
     ctx: &mut Context<F>,
-    cario_state: CarioState,
-    make_public: &mut Vec<AssignedValue<F>>,
+    memory: Vec<AssignedValue<F>>,
+    pc: AssignedValue<F>,
+    ap: AssignedValue<F>,
+    fp: AssignedValue<F>,
 ) -> (AssignedValue<F>, AssignedValue<F>, AssignedValue<F>) {
-    // load m, ap, fp, pc
-    let fp = ctx.load_witness(F::from_str_vartime(&cario_state.fp).unwrap());
-    let ap = ctx.load_witness(F::from_str_vartime(&cario_state.ap).unwrap());
-    let pc = ctx.load_witness(F::from_str_vartime(&cario_state.pc).unwrap());
+    let gate = GateChip::<F>::default();
+
+    let instruction = gate.select_from_idx(ctx, memory.to_vec(), pc);
+    let decoded_instruction = decode_instruction(ctx, &gate, instruction);
+    let op0 = compute_op0(
+        ctx,
+        &gate,
+        memory.clone(),
+        decoded_instruction.op0_reg,
+        ap,
+        fp,
+        decoded_instruction.off_op0,
+    );
+    let (op1, instruction_size) = compute_op1_and_instruction_size(
+        ctx,
+        &gate,
+        memory.clone(),
+        decoded_instruction.op1_src,
+        op0,
+        decoded_instruction.off_op1,
+        fp,
+        ap,
+        pc,
+    );
+    let res = compute_res(
+        ctx,
+        &gate,
+        decoded_instruction.pc_update,
+        decoded_instruction.res_logic,
+        op1,
+        op0,
+    );
+    let dst = compute_dst(
+        ctx,
+        &gate,
+        memory.clone(),
+        ap,
+        fp,
+        decoded_instruction.off_dst,
+        decoded_instruction.dst_reg,
+    );
+    let next_pc = compute_next_pc(
+        ctx,
+        &gate,
+        pc,
+        instruction_size,
+        res,
+        dst,
+        op1,
+        decoded_instruction.pc_update,
+    );
+    let (next_ap, next_fp) = compute_next_ap_fp(
+        ctx,
+        &gate,
+        decoded_instruction.op_code,
+        pc,
+        instruction_size,
+        res,
+        dst,
+        op0,
+        fp,
+        ap,
+        decoded_instruction.ap_update,
+    );
+    (next_pc, next_ap, next_fp)
+}
+
+fn vm<F: ScalarField>(
+    ctx: &mut Context<F>,
+    cario_state: CarioState,
+    _: &mut Vec<AssignedValue<F>>,
+) {
+    let num_clock_cycles = 10;
+    let mut fp = ctx.load_witness(F::from_str_vartime(&cario_state.fp).unwrap());
+    let mut ap = ctx.load_witness(F::from_str_vartime(&cario_state.ap).unwrap());
+    let mut pc = ctx.load_witness(F::from_str_vartime(&cario_state.pc).unwrap());
     let memory = ctx.assign_witnesses(
         cario_state.memory.iter().map(|x| F::from_str_vartime(x).unwrap()).collect::<Vec<_>>(),
     );
-
-    let lookup_bits =
-        var("LOOKUP_BITS").unwrap_or_else(|_| panic!("LOOKUP_BITS not set")).parse().unwrap();
-    let range: RangeChip<F> = RangeChip::default(lookup_bits);
-    let gate = range.gate();
-
-    let instruction = gate.select_from_idx(ctx, memory.to_vec(), pc);
-    let instruction_bits = range.gate().num_to_bits(ctx, instruction, 63);
-    let off_dst = bit_slice(ctx, gate, &instruction_bits, 0, 16);
-    let off_op0 = bit_slice(ctx, gate, &instruction_bits, 16, 32);
-    let off_op1 = bit_slice(ctx, gate, &instruction_bits, 32, 48);
-    let dst_reg = instruction_bits[48];
-    let op0_reg = instruction_bits[49];
-
-    // calculate op0
-    let index0 = gate.add(ctx, ap, off_op0);
-    let index1 = gate.add(ctx, fp, off_op0);
-    let cell0 = gate.select_from_idx(ctx, memory.to_vec(), index0);
-    let cell1 = gate.select_from_idx(ctx, memory.to_vec(), index1);
-    let op0 = gate.select(ctx, cell1, cell0, op0_reg);
-
-    // calculate op1 and instruction_size
-    let instruction_size =
-        gate.select(ctx, Constant(F::from(2)), Constant(F::from(1)), instruction_bits[50]);
-
-    // op1_src = 0
-    let index_start = op0;
-    // op1_src = 1
-    let index_start = gate.select(ctx, pc, index_start, instruction_bits[50]);
-    // op1_src = 2
-    let index_start = gate.select(ctx, fp, index_start, instruction_bits[51]);
-    // op1_src = 4
-    let index_start = gate.select(ctx, ap, index_start, instruction_bits[52]);
-    let index = gate.add(ctx, index_start, off_op1);
-    let op1 = gate.select_from_idx(ctx, memory.to_vec(), index);
-
-    // calculate res
-    let sum = gate.add(ctx, op0, op1);
-    let prod = gate.mul(ctx, op0, op1);
-    // res_logic = 0
-    let res = op1;
-    // res_logic = 1
-    let res = gate.select(ctx, sum, res, instruction_bits[53]);
-    // res_logic = 2
-    let res = gate.select(ctx, prod, res, instruction_bits[54]);
-
-    // calculate dst
-    let index_start = gate.select(ctx, fp, ap, dst_reg);
-    let index = gate.add(ctx, index_start, off_dst);
-    let dst = gate.select_from_idx(ctx, memory.to_vec(), index);
-
-    // calculate next_pc
-    // pc_update = 0
-    let next_pc = gate.add(ctx, pc, instruction_size);
-    // pc_update = 1
-    let next_pc = gate.select(ctx, res, next_pc, instruction_bits[55]);
-    // pc_update = 2
-    let rel_loc = gate.add(ctx, pc, res);
-    let next_pc = gate.select(ctx, rel_loc, next_pc, instruction_bits[56]);
-    // pc_update = 4
-    let jump_loc = gate.add(ctx, pc, op1);
-    // change if pc_update = 4 and dst != 0
-    let dst_is_zero = gate.is_zero(ctx, dst);
-    let dst_is_nonzero = gate.sub(ctx, Constant(F::from(1)), dst_is_zero);
-    let use_jump_loc = gate.and(ctx, instruction_bits[57], dst_is_nonzero);
-    let next_pc = gate.select(ctx, jump_loc, next_pc, use_jump_loc);
-
-    // calculate next_ap, next_fp
-    // opcode = 0, 2, 4 case
-    // ap_update = 0
-    let next_ap = ap;
-    // ap_update = 1
-    let sum = gate.add(ctx, ap, res);
-    let next_ap = gate.select(ctx, sum, next_ap, instruction_bits[58]);
-    // ap_update = 2
-    let sum = gate.add(ctx, ap, Constant(F::from(1)));
-    let next_ap = gate.select(ctx, sum, next_ap, instruction_bits[59]);
-
-    let next_fp = fp;
-    // opcode = 2
-    let next_fp = gate.select(ctx, dst, next_fp, instruction_bits[60]);
-    // opcode = 4
-    // assert
-
-    // opcode = 1 case
-    // asserts
-    let sum = gate.add(ctx, ap, Constant(F::from(2)));
-    let next_fp = gate.select(ctx, sum, next_fp, instruction_bits[61]);
-    let next_ap = gate.select(ctx, sum, next_ap, instruction_bits[61]);
-
-    (next_pc, next_ap, next_fp)
+    for _ in 0..num_clock_cycles {
+        (pc, ap, fp) = state_transition(ctx, memory.clone(), pc, ap, fp);
+    }
 }
 
 fn main() {
@@ -256,5 +396,5 @@ fn main() {
 
     let args = Cli::parse();
 
-    run(state_transition, args);
+    run(vm, args);
 }
