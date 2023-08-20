@@ -76,7 +76,7 @@ fn decode_instruction<F: ScalarField>(
     let ap_update = bit_slice(ctx, gate, &instruction_bits, 58, 60);
     let op_code = bit_slice(ctx, gate, &instruction_bits, 60, 63);
 
-    let decoded = DecodedInstruction {
+    DecodedInstruction {
         off_dst,
         off_op0,
         off_op1,
@@ -87,8 +87,7 @@ fn decode_instruction<F: ScalarField>(
         pc_update,
         ap_update,
         op_code,
-    };
-    decoded
+    }
 }
 
 // todo: read memory through dynamic look up table
