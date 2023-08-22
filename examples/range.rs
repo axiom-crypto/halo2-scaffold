@@ -32,6 +32,23 @@ fn some_algorithm_in_zk<F: ScalarField>(
     // create a Range chip that contains methods for basic arithmetic operations
     let range = RangeChip::default(lookup_bits);
 
+    // lookup_bits = 10
+    // want to check x has 2 bits
+    // - x should have 10 bits
+    // - x * 2^8 = x << 8 should have 10 bits
+
+    // want to check x has 12 bits
+    // prove:
+    // - x = x_0 + x_1 * 2^10
+    // - where x_0 has 10 bits
+    // - x_1 has 2 bits
+
+    // want to check x has 11 bits
+    // prove:
+    // - x = x_0 + x_1 * 2^10
+    // - where x_0 has 10 bits
+    // - x_1 has 1 bit: x_1 * (x_1 - 1) == 0
+
     // check that `x` is in [0, 2^64)
     range.range_check(ctx, x, 64);
 
