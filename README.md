@@ -62,10 +62,8 @@ RUST_LOG=info cargo run --example halo2_lib -- --name halo2_lib -k <DEGREE> mock
 To generate a random universal trusted setup (for testing only!) and the proving and verifying keys for your circuit, run
 
 ```bash
-cargo run --example halo2_lib -- --name halo2_lib -k <DEGREE> --input halo2_lib.0.in keygen
+cargo run --example halo2_lib -- --name halo2_lib -k <DEGREE> keygen
 ```
-
-For technical reasons (to be removed in the future), keygen still requires an input file of the correct format. However keygen is only done once per circuit, so it is best practice to use a different input than the input you want to test with.
 
 This will generate a proving key `data/halo2_lib.pk` and a verifying key `data/halo2_lib.vk`. It will also generate a file `configs/halo2_lib.json` which describes (and pins down) the configuration of the circuit. This configuration file is later read by the prover.
 
