@@ -205,3 +205,18 @@ slow. For nearly as fast performance with better compile times, run
 ```bash
 cargo run --profile=local --example standard_plonk
 ```
+
+### `PolyMul`
+
+```bash
+cargo run --example polymul -- --name poly_input  -k 11  mock
+```
+
+### `PolyAdd`
+
+```bash
+cargo run --example polyadd -- --name poly_input  -k 11  mock
+```
+
+
+
