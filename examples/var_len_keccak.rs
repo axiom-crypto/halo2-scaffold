@@ -22,7 +22,7 @@ fn compute_var_len_keccak<F: Field>(
     keccak: &mut KeccakChip<F>,
     input: CircuitInput,
     make_public: &mut Vec<AssignedValue<F>>,
-) -> impl FnOnce(&mut Context<F>, &mut Context<F>, &EthChip<F>) + Clone {
+) -> impl FnOnce(&mut Context<F>, &mut Context<F>, &EthChip<F>, &F) + Clone {
     // the output is a callback function, just take this trait for granted
 
     // load the input
@@ -69,7 +69,7 @@ fn compute_var_len_keccak<F: Field>(
     // For Keccak, this function is empty because we fill it in for you behind the scenes. ONLY in the SecondPhase is the keccak computation above actually constrained.
     #[allow(clippy::let_and_return)]
     let callback =
-        |_ctx_gate: &mut Context<F>, _ctx_rlc: &mut Context<F>, _eth_chip: &EthChip<F>| {};
+        |_ctx_gate: &mut Context<F>, _ctx_rlc: &mut Context<F>, _eth_chip: &EthChip<F>, _random: &F| {};
 
     callback
 }

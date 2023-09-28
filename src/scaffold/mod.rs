@@ -139,7 +139,7 @@ mod eth {
             T,
             &mut Vec<AssignedValue<Fr>>,
         ) -> F1,
-        F1: FnOnce(&mut Context<Fr>, &mut Context<Fr>, &EthChip<Fr>) + Clone,
+        F1: FnOnce(&mut Context<Fr>, &mut Context<Fr>, &EthChip<Fr>, &Fr) + Clone,
     {
         type Pinning = EthConfigPinning;
 
@@ -177,7 +177,7 @@ mod eth {
                  keccak_rlcs: (FixedLenRLCs<Fr>, VarLenRLCs<Fr>)| {
                     let chip = EthChip::new(rlp, Some(keccak_rlcs));
                     let (ctx_gate, ctx_rlc) = builder.rlc_ctx_pair();
-                    (f_phase1)(ctx_gate, ctx_rlc, &chip);
+                    (f_phase1)(ctx_gate, ctx_rlc, &chip, chip.rlp().rlc().gamma());
                     if ctx_gate.advice.is_empty() {
                         builder.gate_builder.threads[1].pop();
                     }
@@ -200,7 +200,7 @@ mod eth {
             T,
             &mut Vec<AssignedValue<Fr>>,
         ) -> F1,
-        F1: FnOnce(&mut Context<Fr>, &mut Context<Fr>, &EthChip<Fr>) + Clone,
+        F1: FnOnce(&mut Context<Fr>, &mut Context<Fr>, &EthChip<Fr>, &Fr) + Clone,
     {
         run_eth_builder(
             |builder, chip, keccak, inp, public| f(builder.main(0), chip, keccak, inp, public),
@@ -218,7 +218,7 @@ mod eth {
             T,
             &mut Vec<AssignedValue<Fr>>,
         ) -> F1,
-        F1: FnOnce(&mut Context<Fr>, &mut Context<Fr>, &EthChip<Fr>) + Clone,
+        F1: FnOnce(&mut Context<Fr>, &mut Context<Fr>, &EthChip<Fr>, &Fr) + Clone,
     {
         let name = &cli.name;
         let input_path = PathBuf::from("data")
@@ -241,7 +241,7 @@ mod eth {
             T,
             &mut Vec<AssignedValue<Fr>>,
         ) -> F1,
-        F1: FnOnce(&mut Context<Fr>, &mut Context<Fr>, &EthChip<Fr>) + Clone,
+        F1: FnOnce(&mut Context<Fr>, &mut Context<Fr>, &EthChip<Fr>, &Fr) + Clone,
     {
         let precircuit = EthScaffold { f, private_inputs, _f1: PhantomData };
         run_cli(precircuit, cli);
