@@ -42,6 +42,7 @@ use std::{
     fs::{self, File},
     io::{BufReader, BufWriter},
     path::{Path, PathBuf},
+    time::Instant,
 };
 
 use self::cmd::{Cli, SnarkCmd};
@@ -293,7 +294,10 @@ pub fn run_cli<P: PreCircuit>(precircuit: P, cli: Cli) {
             if snark_path.exists() {
                 fs::remove_file(&snark_path).unwrap();
             }
+            let start = Instant::now();
             gen_snark_shplonk(&params, &pk, circuit, Some(&snark_path));
+            let prover_time = start.elapsed(); 
+            println!("Proving time: {:?}", prover_time);
             println!("Snark written to: {snark_path:?}");
         }
         SnarkCmd::Verify => {
@@ -309,6 +313,7 @@ pub fn run_cli<P: PreCircuit>(precircuit: P, cli: Cli) {
             let mut transcript =
                 PoseidonTranscript::<NativeLoader, &[u8]>::new::<0>(&snark.proof[..]);
             let instance = &snark.instances[0][..];
+            let start = Instant::now();
             verify_proof::<
                 KZGCommitmentScheme<Bn256>,
                 VerifierSHPLONK<'_, Bn256>,
@@ -317,7 +322,8 @@ pub fn run_cli<P: PreCircuit>(precircuit: P, cli: Cli) {
                 SingleStrategy<'_, Bn256>,
             >(verifier_params, &vk, strategy, &[&[instance]], &mut transcript)
             .unwrap();
-            println!("Snark verified successfully!");
+            let verification_time = start.elapsed();
+            println!("Snark verified successfully in {:?}", verification_time);
         }
     }
 }
