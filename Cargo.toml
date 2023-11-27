@@ -12,7 +12,7 @@ serde = { version = "=1.0", default-features = false, features = ["derive"] }
 serde_json = "=1.0"
 log = "=0.4"
 env_logger = "=0.10"
-clap = { version = "=4.1", features = ["derive"] }
+clap = { version = "=4.0", features = ["derive"] }
 clap-num = "=1.0.2"
 
 # halo2
@@ -24,7 +24,7 @@ halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib", tag = "v0.3.0-
 poseidon = { git = "https://github.com/axiom-crypto/halo2-lib", tag = "v0.3.0-ce" }
 # Axiom Evm wrapper 
 # These are just for making proving executables, if you are just building a library you don't need them as dependencies in your project
-axiom-eth = { git = "https://github.com/axiom-crypto/axiom-eth.git", rev = "c09477a",  default-features = false, features = ["halo2-axiom", "aggregation", "evm", "clap"] }
+axiom-eth = { git = "https://github.com/axiom-crypto/axiom-eth.git", branch = "community-edition", default-features = false, features = ["halo2-axiom", "aggregation", "evm", "clap"] }
 snark-verifier-sdk = { git = "https://github.com/axiom-crypto/snark-verifier.git", tag = "v0.1.1-ce", default-features = false, features = ["loader_halo2"] }
 
 [dev-dependencies]
