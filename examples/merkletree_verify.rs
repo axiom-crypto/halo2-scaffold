@@ -1,5 +1,4 @@
 use clap::Parser;
-use ethers_core::utils::hex::FromHex;
 use halo2_base::{gates::GateChip, utils::ScalarField, AssignedValue, Context, safe_types::GateInstructions, QuantumCell::Constant};
 use halo2_scaffold::scaffold::{cmd::Cli, run};
 use poseidon::PoseidonChip;
@@ -10,11 +9,11 @@ const RATE: usize = 2;
 const R_F: usize = 8;
 const R_P: usize = 57;
 
-const PROOF_SZ: usize = 3;
+const PROOF_SZ: usize = 4;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CircuitInput {
-    pub inputs: [String; PROOF_SZ*2+2], // two field elements, but as strings for easier deserialization
+    pub inputs: [String; PROOF_SZ*2], // two field elements, but as strings for easier deserialization
 }
 
 fn verify_merkle_proof<F: ScalarField>(
@@ -26,9 +25,6 @@ fn verify_merkle_proof<F: ScalarField>(
     for input in inp.inputs {
         if input.starts_with("[") {
             let sz = input.len();
-            // println!("{:?}", input[1..sz]);
-            // let a: Vec<&str> = input[1..sz-1].split(", ").collect();
-            // println!("{:?}", a);
             let numbers: Vec<u8> = input[1..sz-1].split(", ").map(|x|u8::from_str_radix(x, 10).unwrap()).collect();
             proof_vec.push(ctx.load_witness(F::from_bytes_le(numbers.as_slice())))
         }
@@ -36,9 +32,8 @@ fn verify_merkle_proof<F: ScalarField>(
             proof_vec.push(ctx.load_witness(F::from_str_vartime(&input).unwrap()));
         }
     }
-
-    let tree_root = proof_vec[0];
-    proof_vec.remove(0);
+    let tree_root = proof_vec[proof_vec.len()-1];
+    proof_vec.remove(proof_vec.len()-1);
     make_public.push(tree_root);
 
     let gate = GateChip::<F>::default();
@@ -57,59 +52,13 @@ fn verify_merkle_proof<F: ScalarField>(
         let s_ch = gate.mul(ctx, b0, cur_hash);
         let s_nd = gate.mul(ctx, b1, node);
         let snd = gate.add(ctx, s_ch, s_nd);
-        println!("frst: {:?}, snd: {:?}", first.value(), snd.value());
         poseidon.clear();
         poseidon.update(&[first, snd]);
         cur_hash = poseidon.squeeze(ctx, &gate).unwrap();
-        println!("cur_hash: {:?}", cur_hash.value());
     }
     make_public.push(cur_hash);
     gate.is_equal(ctx, cur_hash, tree_root);
     println!("root: {:?}, poseidon(x_1, ..., x_n): {:?}", tree_root.value(), cur_hash.value());
-}
-
-
-fn gen_merkle_root<F: ScalarField>(
-    ctx: &mut Context<F>,
-    inp: CircuitInput,
-    make_public: &mut Vec<AssignedValue<F>>,
-) {
-    let mut proof_vec = vec![];
-    for input in inp.inputs {
-        proof_vec.push(ctx.load_witness(F::from_str_vartime(&input).unwrap()));
-    }
-
-    // let tree_root = proof_vec[0];
-    // proof_vec.remove(0);
-    // make_public.push(tree_root);
-
-    let gate = GateChip::<F>::default();
-    let mut poseidon = PoseidonChip::<F, T, RATE>::new(ctx, R_F, R_P).unwrap();
-    let mut sz = 8;
-    for i in 0..4 {
-        let mut proof_vec_new = vec![];
-        for j in 0..sz/2 {
-            poseidon.clear();
-            poseidon.update(&[proof_vec[j*2], proof_vec[j*2+1]]);
-            let cur_hash = poseidon.squeeze(ctx, &gate).unwrap();
-            let vecc = cur_hash.value().to_bytes_le();
-            println!("i: {:?}, j: {:?}, hash: {:?}", i, j, vecc );
-            println!("i: {:?}, j: {:?}, hash: {:?}", i, j, cur_hash.value() );
-            proof_vec_new.push(cur_hash);
-        }
-        sz /= 2;
-        proof_vec = proof_vec_new;
-    }
-    // let mut cur_hash = proof_vec[0];
-    // make_public.push(cur_hash);
-    // proof_vec.remove(0);
-    // for node in proof_vec {
-    //     poseidon.update(&[cur_hash, node]);
-    //     cur_hash = poseidon.squeeze(ctx, &gate).unwrap();
-    // }
-    // make_public.push(cur_hash);
-    // gate.is_equal(ctx, cur_hash, tree_root);
-    // println!("root: {:?}, poseidon(x_1, ..., x_n): {:?}", tree_root.value(), cur_hash.value());
 }
 
 fn main() {
@@ -133,6 +82,8 @@ fn main() {
         "0x2d311b4dc1f798b1a8aa862ac5f792d0e4a27690c2bfc1378c0ef3b71cdd3e2b",
         "0"
     ]
+
+tree build from [1, 2, 3, 4, 5, 6, 7, 8]
 
 i: 0, j: 0, hash: [83, 255, 222, 105, 106, 203, 102, 160, 252, 101, 48, 149, 22, 138, 173, 184, 184, 248, 143, 253, 169, 122, 66, 145, 181, 192, 241, 249, 249, 242, 93, 48]
 i: 0, j: 0, hash: 0x305df2f9f9f1c0b591427aa9fd8ff8b8b8ad8a16953065fca066cb6a69deff53
