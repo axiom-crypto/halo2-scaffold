@@ -1,4 +1,5 @@
 use clap::Parser;
+use halo2_base::gates::circuit::builder::BaseCircuitBuilder;
 use halo2_base::gates::{GateChip, GateInstructions};
 use halo2_base::utils::ScalarField;
 use halo2_base::AssignedValue;
@@ -18,12 +19,13 @@ pub struct CircuitInput {
 
 // this algorithm takes a public input x, computes x^2 + 72, and outputs the result as public output
 fn some_algorithm_in_zk<F: ScalarField>(
-    ctx: &mut Context<F>,
+    builder: &mut BaseCircuitBuilder<F>,
     input: CircuitInput,
     make_public: &mut Vec<AssignedValue<F>>,
 ) {
     let x = F::from_str_vartime(&input.x).expect("deserialize field element should not fail");
     // `Context` can roughly be thought of as a single-threaded execution trace of a program we want to ZK prove. We do some post-processing on `Context` to optimally divide the execution trace into multiple columns in a PLONKish arithmetization
+    let ctx = builder.main(0);
     // More advanced usage with multi-threaded witness generation is possible, but we do not explain it here
 
     // first we load a number `x` into as system, as a "witness"
