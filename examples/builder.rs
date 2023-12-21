@@ -1,8 +1,8 @@
 //! Example of scaffolding where function uses full `GateThreaderBuilder` instead of single `Context`
 use clap::Parser;
-use halo2_base::gates::builder::GateThreadBuilder;
+use halo2_base::gates::circuit::builder::BaseCircuitBuilder;
 use halo2_base::gates::{GateChip, GateInstructions};
-use halo2_base::halo2_proofs::halo2curves::bn256::Fr;
+use halo2_base::halo2_proofs::halo2curves::{bn256::Fr, ff::Field};
 use halo2_base::utils::ScalarField;
 use halo2_base::AssignedValue;
 #[allow(unused_imports)]
@@ -10,14 +10,13 @@ use halo2_base::{
     Context,
     QuantumCell::{Constant, Existing, Witness},
 };
-use halo2_proofs::arithmetic::Field;
 use halo2_scaffold::scaffold::cmd::Cli;
-use halo2_scaffold::scaffold::run_builder_on_inputs;
+use halo2_scaffold::scaffold::run_on_inputs;
 use rand::rngs::OsRng;
 
 // this algorithm takes a public input x, computes x^2 + 72, and outputs the result as public output
 fn some_algorithm_in_zk<F: ScalarField>(
-    builder: &mut GateThreadBuilder<F>,
+    builder: &mut BaseCircuitBuilder<F>,
     x: F,
     make_public: &mut Vec<AssignedValue<F>>,
 ) {
@@ -75,5 +74,5 @@ fn main() {
     // let's say we don't want to run prover with inputs from file
     // instead we generate inputs here:
     let private_inputs = Fr::random(OsRng);
-    run_builder_on_inputs(some_algorithm_in_zk, args, private_inputs);
+    run_on_inputs(some_algorithm_in_zk, args, private_inputs);
 }

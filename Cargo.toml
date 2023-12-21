@@ -1,6 +1,6 @@
 [package]
 name = "halo2-scaffold"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -18,14 +18,9 @@ clap-num = "=1.0.2"
 # halo2
 halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.git", tag = "v2023_02_02" }
 
-# Axiom's helper API with basic functions 
-halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib", tag = "v0.3.0-ce" }
-# Axiom poseidon chip (adapted from Scroll)
-poseidon = { git = "https://github.com/axiom-crypto/halo2-lib", tag = "v0.3.0-ce" }
-# Axiom Evm wrapper 
-# These are just for making proving executables, if you are just building a library you don't need them as dependencies in your project
-axiom-eth = { git = "https://github.com/axiom-crypto/axiom-eth.git", branch = "community-edition", default-features = false, features = ["halo2-axiom", "aggregation", "evm", "clap"] }
-snark-verifier-sdk = { git = "https://github.com/axiom-crypto/snark-verifier.git", tag = "v0.1.1-ce", default-features = false, features = ["loader_halo2"] }
+# Axiom's helper API with basic functions
+halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "community-edition" }
+snark-verifier-sdk = { git = "https://github.com/axiom-crypto/snark-verifier.git", branch = "community-edition" }
 
 [dev-dependencies]
 test-log = "=0.2.11"
