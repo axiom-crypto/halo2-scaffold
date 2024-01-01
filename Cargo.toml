@@ -21,6 +21,8 @@ halo2_proofs = { git = "https://github.com/privacy-scaling-explorations/halo2.gi
 # Axiom's helper API with basic functions
 halo2-base = { git = "https://github.com/axiom-crypto/halo2-lib", branch = "community-edition" }
 snark-verifier-sdk = { git = "https://github.com/axiom-crypto/snark-verifier.git", branch = "community-edition" }
+serde-big-array = "0.5.1"
+serde_derive = "1.0.193"
 
 [dev-dependencies]
 test-log = "=0.2.11"

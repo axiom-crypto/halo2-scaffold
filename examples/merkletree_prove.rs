@@ -1,41 +1,91 @@
+#[macro_use]
+extern crate serde_derive;
+
+extern crate serde;
+extern crate serde_json;
+
+use std::{process::exit, io::Write};
+
 use clap::Parser;
-use halo2_base::{gates::GateChip, utils::ScalarField, AssignedValue, Context};
+use halo2_base::{gates::{GateChip, circuit::builder::BaseCircuitBuilder}, utils::BigPrimeField, AssignedValue, poseidon::hasher::PoseidonHasher};
 use halo2_scaffold::scaffold::{cmd::Cli, run};
-use poseidon::PoseidonChip;
-use serde::{Deserialize, Serialize};
+use serde::{Serialize, Serializer};
+use snark_verifier_sdk::halo2::OptimizedPoseidonSpec;
 
 const T: usize = 3;
 const RATE: usize = 2;
 const R_F: usize = 8;
 const R_P: usize = 57;
 
-const INP_SZ: usize = 8;
-const PROOF_SZ: usize = 4;
+const INP_SZ: usize = 1048576;
+const PROOF_SZ: usize = 21;
+
+pub fn serialize_array<S, T>(array: &[T], serializer: S) -> Result<S::Ok, S::Error>
+where S: Serializer, T: Serialize {
+	array.serialize(serializer)
+}
+
+#[macro_export]
+macro_rules! serde_array { ($m:ident, $n:expr) => {
+	pub mod $m {
+		use std::{ptr};
+		use serde::{Deserialize, Deserializer, de};
+		pub use $crate::serialize_array as serialize;
+		use super::*;
+
+		pub fn deserialize<'de, D, T>(deserializer: D) -> Result<[T; $n], D::Error>
+		where D: Deserializer<'de>, T: Deserialize<'de> + 'de {
+			let slice: Vec<T> = Deserialize::deserialize(deserializer).unwrap();
+			if slice.len() != $n {
+				return Err(de::Error::custom("input slice has wrong length"));
+			}
+			unsafe {
+				let mut result: [T; $n] = std::mem::MaybeUninit::uninit().assume_init();
+				println!("HAHA");
+                for (src, dst) in slice.into_iter().zip(&mut result[..]) {
+					ptr::write(dst, src);
+				}
+				Ok(result)
+			}
+		}
+	}
+}}
+
+serde_array!(a64, 64);
+serde_array!(a32769, 32769);
+serde_array!(a65537, 65537);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CircuitInput {
-    pub inputs: [String; INP_SZ+1], // two field elements, but as strings for easier deserialization
+    // #[serde(with = "a65537")]
+    // pub inputs: [String; INP_SZ+1],
 }
 
 
-fn gen_merkle_root_proof<F: ScalarField>(
-    ctx: &mut Context<F>,
+fn gen_merkle_root_proof<F: BigPrimeField>(
+    builder: &mut BaseCircuitBuilder<F>,
     inp: CircuitInput,
     _make_public: &mut Vec<AssignedValue<F>>,
 ) {
-    let mut prove_id = inp.inputs[inp.inputs.len()-1].parse::<usize>().unwrap();
+    let ctx = builder.main(0);
+    let mut prove_id: usize = 3;
     let mut proof_vec = vec![];
-    for input in inp.inputs.split_last().unwrap().1 {
+    for i in 0..INP_SZ {
+        let s_input = i.to_string();
+        let input = s_input.as_str();
         proof_vec.push(ctx.load_witness(F::from_str_vartime(&input).unwrap()));
     }
+    // for input in inp.inputs.split_last().unwrap().1 {
+    //     proof_vec.push(ctx.load_witness(F::from_str_vartime(&input).unwrap()));
+    // }
 
     // let tree_root = proof_vec[0];
     // proof_vec.remove(0);
     // make_public.push(tree_root);
-
+    
     let gate = GateChip::<F>::default();
-    let mut poseidon = PoseidonChip::<F, T, RATE>::new(ctx, R_F, R_P).unwrap();
-    let mut sz = 8;
+    let mut poseidon = PoseidonHasher::<F, T, RATE>::new(OptimizedPoseidonSpec::new::<R_F, R_P, 0>());
+    let mut sz = INP_SZ;
     println!("\"{:?}\",", proof_vec[prove_id].value().to_bytes_le());
     println!("\"{:?}\",", proof_vec[prove_id^1].value().to_bytes_le());
     if prove_id % 2 == 0 {
@@ -45,16 +95,24 @@ fn gen_merkle_root_proof<F: ScalarField>(
         println!("\"1\",");
     }
     for i in 1..PROOF_SZ {
-        let mut proof_vec_new = vec![];
         prove_id /= 2;
         for j in 0..sz/2 {
             poseidon.clear();
-            poseidon.update(&[proof_vec[j*2], proof_vec[j*2+1]]);
-            let cur_hash = poseidon.squeeze(ctx, &gate).unwrap();
+            poseidon.initialize_consts(ctx, &gate);
+            let cur_hash = poseidon.hash_fix_len_array(ctx, &gate, &[proof_vec[j*2], proof_vec[j*2+1]]);
+            ctx.advice.clear();
+            ctx.selector.clear();
+            let mut cpManager = ctx.copy_manager.lock().unwrap();
+            cpManager.advice_equalities.clear();
+            cpManager.assigned_advices.clear();
+            cpManager.assigned_constants.clear();
+            cpManager.constant_equalities.clear();
             if j == prove_id^1 {
                 println!("\"{:?}\",", cur_hash.value().to_bytes_le());
+                std::io::stdout().flush().unwrap();
             }
-            proof_vec_new.push(cur_hash);
+            proof_vec[j] = cur_hash;
+            // proof_vec_new.push(cur_hash);
         }
         if i+1 != PROOF_SZ {
             if prove_id % 2 == 0 {
@@ -65,10 +123,11 @@ fn gen_merkle_root_proof<F: ScalarField>(
             }
         }
         sz /= 2;
-        proof_vec = proof_vec_new;
     }
     // print root
     println!("\"{:?}\"", proof_vec[0].value().to_bytes_le());
+    println!("OMG");
+    exit(0);
 }
 
 fn main() {

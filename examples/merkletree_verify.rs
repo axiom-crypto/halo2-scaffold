@@ -1,26 +1,62 @@
 use clap::Parser;
-use halo2_base::{gates::GateChip, utils::ScalarField, AssignedValue, Context, safe_types::GateInstructions, QuantumCell::Constant};
+use halo2_base::{gates::{GateChip, circuit::builder::BaseCircuitBuilder, GateInstructions}, utils::BigPrimeField, AssignedValue, QuantumCell::Constant, poseidon::hasher::PoseidonHasher};
 use halo2_scaffold::scaffold::{cmd::Cli, run};
-use poseidon::PoseidonChip;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
+use snark_verifier_sdk::halo2::OptimizedPoseidonSpec;
 
 const T: usize = 3;
 const RATE: usize = 2;
 const R_F: usize = 8;
 const R_P: usize = 57;
 
-const PROOF_SZ: usize = 4;
+const PROOF_SZ: usize = 21;
+
+
+pub fn serialize_array<S, T>(array: &[T], serializer: S) -> Result<S::Ok, S::Error>
+where S: Serializer, T: Serialize {
+	array.serialize(serializer)
+}
+
+#[macro_export]
+macro_rules! serde_array { ($m:ident, $n:expr) => {
+	pub mod $m {
+		use std::{ptr};
+		use serde::{Deserialize, Deserializer, de};
+		pub use $crate::serialize_array as serialize;
+		use super::*;
+
+		pub fn deserialize<'de, D, T>(deserializer: D) -> Result<[T; $n], D::Error>
+		where D: Deserializer<'de>, T: Deserialize<'de> + 'de {
+			let slice: Vec<T> = Deserialize::deserialize(deserializer).unwrap();
+			if slice.len() != $n {
+				return Err(de::Error::custom("input slice has wrong length"));
+			}
+			unsafe {
+				let mut result: [T; $n] = std::mem::MaybeUninit::uninit().assume_init();
+				println!("HAHA");
+                for (src, dst) in slice.into_iter().zip(&mut result[..]) {
+					ptr::write(dst, src);
+				}
+				Ok(result)
+			}
+		}
+	}
+}}
+
+serde_array!(ARRSZ, PROOF_SZ*2);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CircuitInput {
+    #[serde(with = "ARRSZ")]
     pub inputs: [String; PROOF_SZ*2], // two field elements, but as strings for easier deserialization
 }
 
-fn verify_merkle_proof<F: ScalarField>(
-    ctx: &mut Context<F>,
+fn verify_merkle_proof<F: BigPrimeField>(
+    builder: &mut BaseCircuitBuilder<F>,
     inp: CircuitInput,
     make_public: &mut Vec<AssignedValue<F>>,
 ) {
+    let ctx = builder.main(0);
     let mut proof_vec = vec![];
     for input in inp.inputs {
         if input.starts_with("[") {
@@ -37,7 +73,7 @@ fn verify_merkle_proof<F: ScalarField>(
     make_public.push(tree_root);
 
     let gate = GateChip::<F>::default();
-    let mut poseidon = PoseidonChip::<F, T, RATE>::new(ctx, R_F, R_P).unwrap();
+    let mut poseidon = PoseidonHasher::<F, T, RATE>::new(OptimizedPoseidonSpec::new::<R_F, R_P, 0>());
     let mut cur_hash = proof_vec[0];
     make_public.push(cur_hash);
     proof_vec.remove(0);
@@ -53,8 +89,8 @@ fn verify_merkle_proof<F: ScalarField>(
         let s_nd = gate.mul(ctx, b1, node);
         let snd = gate.add(ctx, s_ch, s_nd);
         poseidon.clear();
-        poseidon.update(&[first, snd]);
-        cur_hash = poseidon.squeeze(ctx, &gate).unwrap();
+        poseidon.initialize_consts(ctx, &gate);
+        cur_hash = poseidon.hash_fix_len_array(ctx, &gate, &[first, snd]);
     }
     make_public.push(cur_hash);
     gate.is_equal(ctx, cur_hash, tree_root);
